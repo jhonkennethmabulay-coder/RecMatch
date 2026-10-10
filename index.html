@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>RecMatch — Ormoc City Sports Court Reservations</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              100: '#d1fae5',
+              200: '#a7f3d0',
+              300: '#6ee7b7',
+              400: '#34d399',
+              500: '#10b981',
+              600: '#059669',
+              700: '#047857',
+              800: '#065f46',
+              900: '#064e3b',
+              950: '#022c22',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+
+  <!-- Babel Standalone for inline JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Supabase JS Client v2 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="h-full text-slate-100 antialiased font-sans bg-slate-950 selection:bg-brand-500 selection:text-slate-950 flex items-center justify-center p-0 sm:p-4">
+
+  <div id="root" class="w-full h-full sm:max-w-md sm:h-[844px] bg-slate-950 sm:border sm:border-slate-800 sm:rounded-[40px] sm:shadow-2xl flex flex-col overflow-hidden relative"></div>
+
+  <script type="text/babel">
+    // =========================================================================
+    // 1. SUPABASE CLIENT & GLOBAL CONSTANTS
+    // =========================================================================
+    const SUPABASE_URL = "https://wzqwlfexvrijxdvyxhvc.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6cXdsZmV4dnJpanhkdnl4aHZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MDkzODIsImV4cCI6MjEwNzE4NTM4Mn0.MZE4x4YvSGvda8v15AZhX0JtrUg3C9m5LDPhm3nrM7U";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // IAS Strict Password Policy
+    const IAS_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
+    // Helper: Safe Audit Logging
+    const safeAuditLog = async (currentUser, action, details = {}) => {
+      try {
+        if (!currentUser) return;
+        await supabase.from('audit_logs').insert({
+          user_id: currentUser.id,
+          user_email: currentUser.email,
+          user_role: currentUser.role,
+          action: action,
+          details: details
+        });
+      } catch (e) {
+        // Suppress audit log permissions errors
+      }
+    };
+
+    // Default Ormoc City Sports Courts
+    const DEFAULT_ORMOC_COURTS = [
+      { id: 'c1', name: 'Ormoc Superdome Activity Center', sport: 'Basketball / Major Events', rate: 350, location: 'City Center, Ormoc' },
+      { id: 'c2', name: 'Barangay Danhug Covered Court', sport: 'Basketball / Volleyball', rate: 150, location: 'Brgy. Danhug, Ormoc' },
+      { id: 'c3', name: 'WLC Gymnasium Complex', sport: 'Basketball / Futsal', rate: 250, location: 'WLC Main Campus, Ormoc' },
+      { id: 'c4', name: 'Ormoc City Plaza Tennis Court', sport: 'Lawn Tennis', rate: 200, location: 'Real St., Ormoc' },
+      { id: 'c5', name: 'Barangay Linao Multipurpose Gym', sport: 'Basketball / Badminton', rate: 150, location: 'Brgy. Linao, Ormoc' },
+      { id: 'c6', name: 'San Jose Recreational Park Court', sport: 'Pickleball / Tennis', rate: 180, location: 'Brgy. San Jose, Ormoc' },
+      { id: 'c7', name: 'Barangay Cogon Basketball Court', sport: 'Basketball', rate: 120, location: 'Brgy. Cogon, Ormoc' },
+      { id: 'c8', name: 'Ormoc Badminton Center', sport: 'Badminton', rate: 220, location: 'Aviles St., Ormoc' },
+    ];
+
+    // =========================================================================
+    // 2. REUSABLE UI COMPONENTS
+    // =========================================================================
+
+    function SystemBanner({ notification, onClose }) {
+      if (!notification || !notification.message) return null;
+      const isError = notification.type === 'error';
+      const isSuccess = notification.type === 'success';
+
+      return (
+        <div className={`mx-4 my-2 p-3.5 rounded-2xl border flex items-start justify-between gap-3 text-xs font-medium shadow-xl transition-all duration-300 ${
+          isError ? 'bg-red-950/90 border-red-500/50 text-red-200' :
+          isSuccess ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200' :
+          'bg-slate-900/90 border-slate-700 text-slate-200'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <span className="text-base">{isError ? '⚠️' : isSuccess ? '✅' : 'ℹ️'}</span>
+            <div className="space-y-0.5">
+              <p className="font-bold uppercase tracking-wider text-[9px] opacity-80">
+                {isError ? 'System Alert' : isSuccess ? 'Success' : 'Notice'}
+              </p>
+              <p className="text-xs leading-tight">{notification.message}</p>
+            </div>
+          </div>
+          {onClose && (
+            <button 
+              onClick={onClose} 
+              className="text-slate-400 hover:text-white font-bold p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              type="button"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    function ConfirmModal({ isOpen, title, message, confirmText, confirmStyle, onConfirm, onCancel }) {
+      if (!isOpen) return null;
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fade-in">
+          <div className="w-full max-w-xs bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl text-center space-y-4">
+            <div className="w-12 h-12 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center mx-auto text-red-400 font-bold text-xl">
+              🚨
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-white">{title || 'Confirm Action'}</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">{message}</p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2.5 pt-2">
+              <button
+                onClick={onCancel}
+                className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onConfirm}
+                className={`py-2.5 px-3 rounded-xl text-xs font-semibold transition-all shadow-lg ${
+                  confirmStyle === 'danger' 
+                    ? 'bg-red-500 hover:bg-red-400 text-slate-950 shadow-red-500/20' 
+                    : 'bg-brand-500 hover:bg-brand-400 text-slate-950 shadow-brand-500/20'
+                }`}
+              >
+                {confirmText || 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function LoadingSpinner({ label }) {
+      return (
+        <div className="flex flex-col items-center justify-center py-10 space-y-2">
+          <div className="w-7 h-7 border-3 border-brand-500/20 border-t-brand-500 rounded-full animate-spin"></div>
+          {label && <p className="text-xs text-slate-400 font-medium">{label}</p>}
+        </div>
+      );
+    }
+
+    function StatusBadge({ status }) {
+      const styles = {
+        submitted: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+        dean_approved: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+        rejected: 'bg-red-500/10 text-red-400 border-red-500/20',
+      }[status] || 'bg-slate-800 text-slate-400 border-slate-700';
+
+      const labels = {
+        submitted: 'Pending Approval',
+        dean_approved: 'Approved',
+        rejected: 'Declined',
+      }[status] || status;
+
+      return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border ${styles}`}>
+          {labels}
+        </span>
+      );
+    }
+
+    // =========================================================================
+    // 3. AUTHENTICATION MODULE
+    // =========================================================================
+    function AuthModule({ onAuthSuccess, showNotification }) {
+      const [activeTab, setActiveTab] = React.useState('login');
+      
+      const [loginEmail, setLoginEmail] = React.useState('');
+      const [loginPassword, setLoginPassword] = React.useState('');
+      const [showLoginPassword, setShowLoginPassword] = React.useState(false);
+      const [loginLoading, setLoginLoading] = React.useState(false);
+
+      const [regFullName, setRegFullName] = React.useState('');
+      const [regEmail, setRegEmail] = React.useState('');
+      const [regRole, setRegRole] = React.useState('student');
+      const [regPassword, setRegPassword] = React.useState('');
+      const [regConfirmPassword, setRegConfirmPassword] = React.useState('');
+      const [regLoading, setRegLoading] = React.useState(false);
+
+      const validations = {
+        length: regPassword.length >= 8,
+        uppercase: /[A-Z]/.test(regPassword),
+        lowercase: /[a-z]/.test(regPassword),
+        number: /\d/.test(regPassword),
+        special: /[@$!%*?&]/.test(regPassword),
+        match: regPassword.length > 0 && regPassword === regConfirmPassword,
+      };
+
+      const handleLoginSubmit = async (e) => {
+        e.preventDefault();
+
+        if (!loginEmail.trim() || !loginPassword) {
+          showNotification('Empty email or password field.', 'error');
+          return;
+        }
+
+        setLoginLoading(true);
+
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: loginEmail,
+            password: loginPassword,
+          });
+
+          if (error) {
+            showNotification('Incorrect email or password.', 'error');
+            setLoginLoading(false);
+            return;
+          }
+
+          let { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .maybeSingle();
+
+          if (!profile) {
+            profile = {
+              id: data.user.id,
+              full_name: data.user.user_metadata?.full_name || loginEmail.split('@')[0],
+              email: loginEmail,
+              role: data.user.user_metadata?.role || 'student',
+            };
+          }
+
+          showNotification(`Welcome back, ${profile.full_name}!`, 'success');
+          onAuthSuccess(profile);
+        } catch (err) {
+          showNotification('Authentication server error. Please try again.', 'error');
+        } finally {
+          setLoginLoading(false);
+        }
+      };
+
+      const handleRegisterSubmit = async (e) => {
+        e.preventDefault();
+
+        if (!regFullName.trim() || !regEmail.trim()) {
+          showNotification('All fields are required.', 'error');
+          return;
+        }
+
+        if (!IAS_PASSWORD_REGEX.test(regPassword)) {
+          showNotification('Password does not meet IAS security requirements.', 'error');
+          return;
+        }
+
+        if (regPassword !== regConfirmPassword) {
+          showNotification('Confirm password does not match.', 'error');
+          return;
+        }
+
+        setRegLoading(true);
+
+        try {
+          const { data, error } = await supabase.auth.signUp({
+            email: regEmail,
+            password: regPassword,
+            options: {
+              data: {
+                full_name: regFullName,
+                role: regRole,
+              }
+            }
+          });
+
+          if (error) {
+            showNotification(error.message, 'error');
+            setRegLoading(false);
+            return;
+          }
+
+          showNotification('Account created successfully! Please sign in.', 'success');
+          setActiveTab('login');
+          setLoginEmail(regEmail);
+        } catch (err) {
+          showNotification('Registration error. Please try again.', 'error');
+        } finally {
+          setRegLoading(false);
+        }
+      };
+
+      return (
+        <div className="p-5 flex-1 flex flex-col justify-center space-y-5">
+          <div className="text-center space-y-1">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/20 text-brand-400 font-bold text-2xl shadow-inner mb-1">
+              🏀
+            </div>
+            <h1 className="text-xl font-extrabold tracking-tight text-white">RecMatch</h1>
+            <p className="text-[11px] text-slate-400">Ormoc City Sports Court & Liga Portal</p>
+          </div>
+
+          <div className="grid grid-cols-2 p-1 bg-slate-900 rounded-xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveTab('login')}
+              className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                activeTab === 'login' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('register')}
+              className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                activeTab === 'register' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'
+              }`}
+            >
+              Sign Up
+            </button>
+          </div>
+
+          {activeTab === 'login' && (
+            <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="jhon@recmatch.com"
+                  className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">Password</label>
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-3.5 pr-12 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-white font-bold"
+                  >
+                    {showLoginPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loginLoading}
+                className="w-full py-3 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg shadow-brand-500/20 disabled:opacity-50 active:scale-95"
+              >
+                {loginLoading ? 'Signing In...' : 'Sign In'}
+              </button>
+            </form>
+          )}
+
+          {activeTab === 'register' && (
+            <form onSubmit={handleRegisterSubmit} className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Full Name</label>
+                <input
+                  type="text"
+                  value={regFullName}
+                  onChange={(e) => setRegFullName(e.target.value)}
+                  placeholder="Jhon Kenneth Mabulay"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Email Address</label>
+                <input
+                  type="email"
+                  value={regEmail}
+                  onChange={(e) => setRegEmail(e.target.value)}
+                  placeholder="jhon@recmatch.com"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Account Role</label>
+                <select
+                  value={regRole}
+                  onChange={(e) => setRegRole(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                >
+                  <option value="student">Player / User</option>
+                  <option value="dean">Court Organizer</option>
+                  <option value="admin">System Admin</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Password</label>
+                <input
+                  type="password"
+                  value={regPassword}
+                  onChange={(e) => setRegPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Confirm Password</label>
+                <input
+                  type="password"
+                  value={regConfirmPassword}
+                  onChange={(e) => setRegConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800 space-y-1 text-[10px]">
+                <p className="font-bold text-slate-400">IAS Security Checklist:</p>
+                <div className="grid grid-cols-2 gap-0.5 font-mono text-[9px] text-slate-400">
+                  <span className={validations.length ? 'text-brand-400 font-bold' : ''}>{validations.length ? '✓' : '•'} Min 8 chars</span>
+                  <span className={validations.uppercase ? 'text-brand-400 font-bold' : ''}>{validations.uppercase ? '✓' : '•'} Uppercase</span>
+                  <span className={validations.lowercase ? 'text-brand-400 font-bold' : ''}>{validations.lowercase ? '✓' : '•'} Lowercase</span>
+                  <span className={validations.number ? 'text-brand-400 font-bold' : ''}>{validations.number ? '✓' : '•'} Number</span>
+                  <span className={validations.special ? 'text-brand-400 font-bold' : ''}>{validations.special ? '✓' : '•'} Special (@$!%*?&)</span>
+                  <span className={validations.match ? 'text-brand-400 font-bold' : ''}>{validations.match ? '✓' : '•'} Match</span>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={regLoading}
+                className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg shadow-brand-500/20 disabled:opacity-50 active:scale-95"
+              >
+                {regLoading ? 'Registering...' : 'Register Account'}
+              </button>
+            </form>
+          )}
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 4. ORMOC ZONE: PUBLIC COURT AVAILABILITY & APPROVED LIGA FEED
+    // =========================================================================
+    function OrmocZoneSchedule() {
+      const [approvedLigas, setApprovedLigas] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+
+      React.useEffect(() => {
+        fetchApprovedSchedules();
+      }, []);
+
+      const fetchApprovedSchedules = async () => {
+        setLoading(true);
+        const { data } = await supabase
+          .from('enrollments')
+          .select('*')
+          .eq('status', 'dean_approved')
+          .order('submitted_at', { ascending: false });
+
+        setApprovedLigas(data || []);
+        setLoading(false);
+      };
+
+      return (
+        <div className="p-4 space-y-4">
+          <div className="text-center space-y-1 border-b border-slate-800 pb-3">
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center justify-center gap-1.5">
+              <span>🏟️</span> Official Ormoc City Court Schedule
+            </h3>
+            <p className="text-[10px] text-slate-400">Approved Tournaments & Reserved Court Timetable</p>
+          </div>
+
+          {loading ? (
+            <LoadingSpinner label="Fetching official court schedules..." />
+          ) : approvedLigas.length === 0 ? (
+            <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl text-center space-y-2">
+              <span className="text-2xl">🏀</span>
+              <p className="text-xs text-slate-400 font-semibold">All Courts Currently Free for Booking!</p>
+              <p className="text-[10px] text-slate-500">No scheduled Admin/Organizer-approved bookings for today.</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+              {approvedLigas.map((item) => (
+                <div key={item.id} className="p-3 bg-slate-900 border border-slate-800 rounded-2xl space-y-1.5">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-xs font-bold text-brand-400">{item.course_program}</p>
+                      <p className="text-[10px] text-slate-300 font-mono">📅 {item.semester || 'Ormoc Zone'}</p>
+                    </div>
+                    <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-bold rounded-full">
+                      ✓ Reserved / Occupied
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 5. PLAYER / USER MOBILE DASHBOARD
+    // =========================================================================
+    function PlayerDashboard({ currentUser, showNotification, availableCourts }) {
+      const [bookings, setBookings] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+      const [selectedCourt, setSelectedCourt] = React.useState(availableCourts[0]?.id || 'c1');
+      const [reserveDate, setReserveDate] = React.useState(new Date().toISOString().split('T')[0]);
+      const [reserveTime, setReserveTime] = React.useState("16:00");
+
+      React.useEffect(() => {
+        fetchMyBookings();
+      }, []);
+
+      const fetchMyBookings = async () => {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('enrollments')
+          .select('*')
+          .eq('student_id', currentUser.id)
+          .order('submitted_at', { ascending: false });
+
+        if (!error) setBookings(data || []);
+        setLoading(false);
+      };
+
+      const handleCreateBooking = async (e) => {
+        e.preventDefault();
+        const court = availableCourts.find(c => c.id === selectedCourt) || availableCourts[0];
+
+        if (!reserveDate || !reserveTime) {
+          showNotification('Please choose a reservation Date and Time.', 'error');
+          return;
+        }
+
+        await supabase.from('profiles').upsert({
+          id: currentUser.id,
+          full_name: currentUser.full_name || currentUser.email.split('@')[0],
+          email: currentUser.email,
+          role: currentUser.role || 'student'
+        }, { onConflict: 'id' });
+
+        const scheduleString = `${reserveDate} @ ${reserveTime}`;
+
+        const { error } = await supabase.from('enrollments').insert({
+          student_id: currentUser.id,
+          course_program: `${court.name}`,
+          academic_year: "2026",
+          semester: scheduleString,
+          status: 'submitted',
+        }).select();
+
+        if (error) {
+          showNotification(`Booking failed: ${error.message}`, 'error');
+        } else {
+          showNotification(`Court reserved for ${scheduleString}!`, 'success');
+          safeAuditLog(currentUser, 'SUBMIT_COURT_RESERVATION', { court_name: court.name, schedule: scheduleString });
+          fetchMyBookings();
+        }
+      };
+
+      const currentSelectedCourtObj = availableCourts.find(c => c.id === selectedCourt) || availableCourts[0];
+
+      return (
+        <div className="p-4 space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+              <span>🏀</span> Reserve an Ormoc City Court
+            </h3>
+            
+            <form onSubmit={handleCreateBooking} className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1">Select Facility</label>
+                <select
+                  value={selectedCourt}
+                  onChange={(e) => setSelectedCourt(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                >
+                  {availableCourts.map((court) => (
+                    <option key={court.id} value={court.id}>
+                      {court.name} (₱{court.rate}/hr)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 mb-1">Reservation Date</label>
+                  <input
+                    type="date"
+                    value={reserveDate}
+                    onChange={(e) => setReserveDate(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 mb-1">Time Slot</label>
+                  <input
+                    type="time"
+                    value={reserveTime}
+                    onChange={(e) => setReserveTime(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                  />
+                </div>
+              </div>
+
+              {currentSelectedCourtObj && (
+                <div className="p-2.5 bg-slate-950/60 rounded-xl border border-slate-800 text-[11px] space-y-1">
+                  <p className="font-bold text-brand-400">{currentSelectedCourtObj.name}</p>
+                  <p className="text-slate-400 text-[10px]">Sport: {currentSelectedCourtObj.sport}</p>
+                  <p className="text-slate-400 text-[10px]">Location: {currentSelectedCourtObj.location}</p>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
+              >
+                Submit Booking Request
+              </button>
+            </form>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+              <span>📋</span> My Court Reservations
+            </h3>
+
+            {loading ? (
+              <LoadingSpinner label="Fetching bookings..." />
+            ) : bookings.length === 0 ? (
+              <p className="text-[11px] text-slate-500 py-4 text-center">No active court reservations.</p>
+            ) : (
+              <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                {bookings.map((b) => (
+                  <div key={b.id} className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl space-y-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-bold text-xs text-white leading-tight">{b.course_program}</p>
+                      <StatusBadge status={b.status} />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-brand-400 font-mono">
+                      <span>Schedule: {b.semester || 'Pending Schedule'}</span>
+                      <span className="text-slate-500">{b.status === 'dean_approved' ? 'Approved' : 'Pending'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 6. COURT ORGANIZER LIGA & NEW COURT CREATOR DASHBOARD
+    // =========================================================================
+    function OrganizerDashboard({ currentUser, showNotification, availableCourts, refreshCourts }) {
+      const [organizerTab, setOrganizerTab] = React.useState('liga'); // 'liga' | 'new_court' | 'approvals'
+      
+      // Liga proposal fields
+      const [ligaTitle, setLigaTitle] = React.useState('');
+      const [selectedCourt, setSelectedCourt] = React.useState(availableCourts[0]?.name || 'Ormoc Superdome');
+      const [reserveDate, setReserveDate] = React.useState(new Date().toISOString().split('T')[0]);
+
+      // New Court proposal fields
+      const [newCourtName, setNewCourtName] = React.useState('');
+      const [newCourtSport, setNewCourtSport] = React.useState('Basketball');
+      const [newCourtRate, setNewCourtRate] = React.useState('150');
+      const [newCourtLocation, setNewCourtLocation] = React.useState('');
+
+      const [myLigas, setMyLigas] = React.useState([]);
+      const [playerRequests, setPlayerRequests] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+
+      React.useEffect(() => {
+        fetchOrganizerData();
+      }, []);
+
+      const fetchOrganizerData = async () => {
+        setLoading(true);
+        
+        // 1. Fetch my submitted Ligas / Court proposals
+        const { data: ligas } = await supabase
+          .from('enrollments')
+          .select('*')
+          .eq('student_id', currentUser.id)
+          .order('submitted_at', { ascending: false });
+
+        setMyLigas(ligas || []);
+
+        // 2. Fetch pending player reservation requests
+        const { data: rawEnrollments } = await supabase
+          .from('enrollments')
+          .select('*')
+          .neq('student_id', currentUser.id)
+          .order('submitted_at', { ascending: false });
+
+        if (rawEnrollments) {
+          const studentIds = [...new Set(rawEnrollments.map(item => item.student_id).filter(Boolean))];
+          let profilesMap = {};
+
+          if (studentIds.length > 0) {
+            const { data: profilesData } = await supabase
+              .from('profiles')
+              .select('id, full_name, email')
+              .in('id', studentIds);
+
+            if (profilesData) {
+              profilesData.forEach(p => {
+                profilesMap[p.id] = p;
+              });
+            }
+          }
+
+          const formattedRequests = rawEnrollments.map(item => ({
+            ...item,
+            profiles: profilesMap[item.student_id] || { full_name: 'Player / User', email: 'Registered User' }
+          }));
+
+          setPlayerRequests(formattedRequests);
+        }
+
+        setLoading(false);
+      };
+
+      const handleCreateLiga = async (e) => {
+        e.preventDefault();
+
+        if (!ligaTitle.trim()) {
+          showNotification('Please provide a title for the Liga or Tournament.', 'error');
+          return;
+        }
+
+        await supabase.from('profiles').upsert({
+          id: currentUser.id,
+          full_name: currentUser.full_name || currentUser.email.split('@')[0],
+          email: currentUser.email,
+          role: 'dean'
+        }, { onConflict: 'id' });
+
+        const fullLigaName = `🏆 LIGA: ${ligaTitle.trim()} @ ${selectedCourt}`;
+
+        const { error } = await supabase.from('enrollments').insert({
+          student_id: currentUser.id,
+          course_program: fullLigaName,
+          academic_year: "2026",
+          semester: `Date: ${reserveDate}`,
+          status: 'submitted',
+        }).select();
+
+        if (error) {
+          showNotification(`Liga submission error: ${error.message}`, 'error');
+        } else {
+          showNotification(`Liga proposal "${ligaTitle}" sent to Admin for approval!`, 'success');
+          setLigaTitle('');
+          safeAuditLog(currentUser, 'CREATE_LIGA_PROPOSAL', { liga: fullLigaName });
+          fetchOrganizerData();
+        }
+      };
+
+      const handleProposeNewCourt = async (e) => {
+        e.preventDefault();
+
+        if (!newCourtName.trim() || !newCourtLocation.trim()) {
+          showNotification('Court Name and Location are required.', 'error');
+          return;
+        }
+
+        await supabase.from('profiles').upsert({
+          id: currentUser.id,
+          full_name: currentUser.full_name || currentUser.email.split('@')[0],
+          email: currentUser.email,
+          role: 'dean'
+        }, { onConflict: 'id' });
+
+        const courtTag = `🏟️ NEW COURT PROPOSAL: ${newCourtName.trim()} (₱${newCourtRate}/hr) - ${newCourtSport} [Loc: ${newCourtLocation.trim()}]`;
+
+        const { error } = await supabase.from('enrollments').insert({
+          student_id: currentUser.id,
+          course_program: courtTag,
+          academic_year: "2026",
+          semester: `Location: ${newCourtLocation.trim()}`,
+          status: 'submitted',
+        }).select();
+
+        if (error) {
+          showNotification(`Court proposal failed: ${error.message}`, 'error');
+        } else {
+          showNotification(`Court facility "${newCourtName}" sent to Admin for approval!`, 'success');
+          setNewCourtName('');
+          setNewCourtLocation('');
+          safeAuditLog(currentUser, 'PROPOSE_NEW_COURT', { court_name: newCourtName });
+          fetchOrganizerData();
+        }
+      };
+
+      const handleOrganizerApprove = async (id, status) => {
+        const { error } = await supabase
+          .from('enrollments')
+          .update({ status: status })
+          .eq('id', id)
+          .select();
+
+        if (error) {
+          showNotification(`Action failed: ${error.message}`, 'error');
+        } else {
+          showNotification(`Player reservation ${status === 'dean_approved' ? 'Approved' : 'Declined'} successfully!`, 'success');
+          safeAuditLog(currentUser, 'ORGANIZER_DECISION', { request_id: id, status: status });
+          fetchOrganizerData();
+        }
+      };
+
+      return (
+        <div className="p-4 space-y-4">
+          {/* ORGANIZER TAB TOGGLE */}
+          <div className="grid grid-cols-3 p-1 bg-slate-900 rounded-xl border border-slate-800 text-[10px] font-bold">
+            <button
+              onClick={() => setOrganizerTab('liga')}
+              className={`py-1.5 rounded-lg transition-all ${organizerTab === 'liga' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
+            >
+              🏆 Create Liga
+            </button>
+            <button
+              onClick={() => setOrganizerTab('new_court')}
+              className={`py-1.5 rounded-lg transition-all ${organizerTab === 'new_court' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
+            >
+              🏟️ Add Court
+            </button>
+            <button
+              onClick={() => setOrganizerTab('approvals')}
+              className={`py-1.5 rounded-lg transition-all ${organizerTab === 'approvals' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
+            >
+              ⚡ Approvals
+            </button>
+          </div>
+
+          {/* TAB 1: LIGA PROPOSAL */}
+          {organizerTab === 'liga' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>🏆</span> Propose a Liga / League Game
+              </h3>
+              <p className="text-[10px] text-slate-400">Requires Admin Approval before taking court availability.</p>
+
+              <form onSubmit={handleCreateLiga} className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 mb-1">Liga / Event Name</label>
+                  <input
+                    type="text"
+                    value={ligaTitle}
+                    onChange={(e) => setLigaTitle(e.target.value)}
+                    placeholder="e.g., Ormoc Inter-Barangay Basketball Cup"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Select Facility</label>
+                    <select
+                      value={selectedCourt}
+                      onChange={(e) => setSelectedCourt(e.target.value)}
+                      className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                    >
+                      {availableCourts.map((c) => (
+                        <option key={c.id} value={c.name}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Tournament Date</label>
+                    <input
+                      type="date"
+                      value={reserveDate}
+                      onChange={(e) => setReserveDate(e.target.value)}
+                      className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
+                >
+                  Submit Liga for Admin Approval
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 2: PROPOSE NEW COURT */}
+          {organizerTab === 'new_court' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>🏟️</span> Propose a New Ormoc City Court
+              </h3>
+              <p className="text-[10px] text-slate-400">Newly proposed courts require Admin Approval to appear publicly.</p>
+
+              <form onSubmit={handleProposeNewCourt} className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 mb-1">Court / Facility Name</label>
+                  <input
+                    type="text"
+                    value={newCourtName}
+                    onChange={(e) => setNewCourtName(e.target.value)}
+                    placeholder="e.g., Barangay Ipil Gymnasium"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Sport Type</label>
+                    <input
+                      type="text"
+                      value={newCourtSport}
+                      onChange={(e) => setNewCourtSport(e.target.value)}
+                      placeholder="e.g., Basketball / Badminton"
+                      className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Hourly Rate (₱)</label>
+                    <input
+                      type="number"
+                      value={newCourtRate}
+                      onChange={(e) => setNewCourtRate(e.target.value)}
+                      placeholder="150"
+                      className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 mb-1">Location / Barangay</label>
+                  <input
+                    type="text"
+                    value={newCourtLocation}
+                    onChange={(e) => setNewCourtLocation(e.target.value)}
+                    placeholder="e.g., Brgy. Ipil, Ormoc City"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
+                >
+                  Propose Court for Admin Approval
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 3: PLAYER RESERVATION APPROVALS */}
+          {organizerTab === 'approvals' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <h3 className="text-xs font-bold text-white flex items-center justify-between border-b border-slate-800 pb-2">
+                <span>⚡ Player Reservation Approvals Desk</span>
+              </h3>
+
+              {loading ? (
+                <LoadingSpinner label="Fetching player requests..." />
+              ) : playerRequests.length === 0 ? (
+                <p className="text-xs text-slate-500 py-4 text-center">No player reservation requests pending review.</p>
+              ) : (
+                <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                  {playerRequests.map((req) => (
+                    <div key={req.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-xs text-white">{req.profiles?.full_name || 'Player'}</p>
+                          <p className="text-[10px] text-slate-500">{req.profiles?.email}</p>
+                        </div>
+                        <StatusBadge status={req.status} />
+                      </div>
+
+                      <p className="text-xs font-bold text-brand-400">{req.course_program}</p>
+                      <p className="text-[10px] text-slate-300 font-mono">📅 {req.semester}</p>
+
+                      {req.status === 'submitted' && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <button
+                            onClick={() => handleOrganizerApprove(req.id, 'dean_approved')}
+                            className="py-1.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold rounded-lg text-[10px] active:scale-95"
+                          >
+                            Approve Booking
+                          </button>
+                          <button
+                            onClick={() => handleOrganizerApprove(req.id, 'rejected')}
+                            className="py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 font-bold rounded-lg text-[10px] active:scale-95"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* MY PROPOSALS */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <h3 className="text-xs font-bold text-white flex items-center justify-between border-b border-slate-800 pb-2">
+              <span>📋 My Submitted Proposals (Ligas & Courts)</span>
+            </h3>
+
+            {loading ? (
+              <LoadingSpinner label="Fetching proposals..." />
+            ) : myLigas.length === 0 ? (
+              <p className="text-xs text-slate-500 py-4 text-center">No pending proposals created.</p>
+            ) : (
+              <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                {myLigas.map((l) => (
+                  <div key={l.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                    <div className="flex justify-between items-start">
+                      <p className="text-xs font-bold text-white leading-tight">{l.course_program}</p>
+                      <StatusBadge status={l.status} />
+                    </div>
+                    <p className="text-[10px] text-brand-400 font-mono">{l.semester || 'Date Unspecified'}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 7. ADMIN LIGA, COURT APPROVAL & AUDIT LOG MODULE
+    // =========================================================================
+    function AdminDashboard({ currentUser, showNotification, refreshCourts }) {
+      const [activeSubTab, setActiveSubTab] = React.useState('approvals');
+      const [pendingProposals, setPendingProposals] = React.useState([]);
+      const [logs, setLogs] = React.useState([]);
+      const [loading, setLoading] = React.useState(true);
+
+      React.useEffect(() => {
+        fetchProposals();
+        fetchAuditLogs();
+      }, []);
+
+      const fetchProposals = async () => {
+        setLoading(true);
+        
+        const { data: rawEnrollments, error } = await supabase
+          .from('enrollments')
+          .select('*')
+          .order('submitted_at', { ascending: false });
+
+        if (error || !rawEnrollments) {
+          setPendingProposals([]);
+          setLoading(false);
+          return;
+        }
+
+        const studentIds = [...new Set(rawEnrollments.map(item => item.student_id).filter(Boolean))];
+        let profilesMap = {};
+
+        if (studentIds.length > 0) {
+          const { data: profilesData } = await supabase
+            .from('profiles')
+            .select('id, full_name, email')
+            .in('id', studentIds);
+
+          if (profilesData) {
+            profilesData.forEach(p => {
+              profilesMap[p.id] = p;
+            });
+          }
+        }
+
+        const formattedProposals = rawEnrollments.map(item => ({
+          ...item,
+          profiles: profilesMap[item.student_id] || { full_name: 'Organizer / User', email: 'Registered User' }
+        }));
+
+        setPendingProposals(formattedProposals);
+        setLoading(false);
+      };
+
+      const fetchAuditLogs = async () => {
+        const { data } = await supabase
+          .from('audit_logs')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        setLogs(data || []);
+      };
+
+      const handleApproveProposal = async (id, status) => {
+        const { error } = await supabase
+          .from('enrollments')
+          .update({ status: status })
+          .eq('id', id)
+          .select();
+
+        if (error) {
+          showNotification(`Approval error: ${error.message}`, 'error');
+        } else {
+          showNotification(`Proposal ${status === 'dean_approved' ? 'Approved' : 'Declined'} successfully!`, 'success');
+          safeAuditLog(currentUser, 'ADMIN_DECISION', { proposal_id: id, status: status });
+          fetchProposals();
+          if (refreshCourts) refreshCourts();
+        }
+      };
+
+      return (
+        <div className="p-4 space-y-3">
+          <div className="grid grid-cols-2 p-1 bg-slate-900 rounded-xl border border-slate-800 text-xs font-bold">
+            <button
+              onClick={() => setActiveSubTab('approvals')}
+              className={`py-1.5 rounded-lg transition-all ${
+                activeSubTab === 'approvals' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'
+              }`}
+            >
+              🏆 Approvals Desk
+            </button>
+            <button
+              onClick={() => setActiveSubTab('logs')}
+              className={`py-1.5 rounded-lg transition-all ${
+                activeSubTab === 'logs' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'
+              }`}
+            >
+              🛡️ Audit Logs
+            </button>
+          </div>
+
+          {activeSubTab === 'approvals' && (
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold text-white border-b border-slate-800 pb-2">
+                Admin Desk (Ligas, Courts & Reservations)
+              </h3>
+
+              {loading ? (
+                <LoadingSpinner label="Fetching proposals..." />
+              ) : pendingProposals.length === 0 ? (
+                <p className="text-xs text-slate-500 py-6 text-center">No pending items for review.</p>
+              ) : (
+                <div className="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
+                  {pendingProposals.map((item) => (
+                    <div key={item.id} className="p-3 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-xs text-white">{item.profiles?.full_name || 'Organizer / User'}</p>
+                          <p className="text-[10px] text-slate-500">{item.profiles?.email}</p>
+                        </div>
+                        <StatusBadge status={item.status} />
+                      </div>
+                      
+                      <p className="text-xs font-bold text-brand-400 leading-snug">{item.course_program}</p>
+                      <p className="text-[10px] text-slate-300 font-mono">📅 {item.semester || 'Date Unspecified'}</p>
+
+                      {item.status === 'submitted' && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <button
+                            onClick={() => handleApproveProposal(item.id, 'dean_approved')}
+                            className="py-1.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold rounded-lg text-[10px] active:scale-95"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleApproveProposal(item.id, 'rejected')}
+                            className="py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 font-bold rounded-lg text-[10px] active:scale-95"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeSubTab === 'logs' && (
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold text-white border-b border-slate-800 pb-2 flex justify-between items-center">
+                <span>🛡️ System Security Audit Logs</span>
+                <button onClick={fetchAuditLogs} className="text-[10px] text-brand-400">Refresh</button>
+              </h3>
+
+              <div className="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                {logs.map((log) => (
+                  <div key={log.id} className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl space-y-1 font-mono text-[10px]">
+                    <div className="flex justify-between text-slate-400">
+                      <span>{new Date(log.created_at).toLocaleTimeString()}</span>
+                      <span className="text-brand-400">{log.action}</span>
+                    </div>
+                    <p className="text-white font-sans text-xs">{log.user_email || 'System'}</p>
+                    <p className="text-slate-500 text-[9px] truncate">{JSON.stringify(log.details)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // =========================================================================
+    // 8. MAIN APP SHELL & NAVIGATION
+    // =========================================================================
+    function App() {
+      const [currentUser, setCurrentUser] = React.useState(null);
+      const [activeNavTab, setActiveNavTab] = React.useState('main');
+      const [notification, setNotification] = React.useState({ message: '', type: 'info' });
+      const [showLogoutModal, setShowLogoutModal] = React.useState(false);
+      const [availableCourts, setAvailableCourts] = React.useState(DEFAULT_ORMOC_COURTS);
+
+      React.useEffect(() => {
+        fetchApprovedCustomCourts();
+      }, []);
+
+      const fetchApprovedCustomCourts = async () => {
+        const { data } = await supabase
+          .from('enrollments')
+          .select('*')
+          .eq('status', 'dean_approved')
+          .like('course_program', '%NEW COURT PROPOSAL%');
+
+        if (data && data.length > 0) {
+          const customCourts = data.map((item, index) => ({
+            id: `approved_court_${item.id}`,
+            name: item.course_program.replace('🏟️ NEW COURT PROPOSAL: ', '').split(' [Loc:')[0],
+            sport: 'Multipurpose Sports',
+            rate: 150,
+            location: item.semester?.replace('Location: ', '') || 'Ormoc City'
+          }));
+
+          setAvailableCourts([...DEFAULT_ORMOC_COURTS, ...customCourts]);
+        }
+      };
+
+      const showNotification = (message, type = 'info') => {
+        setNotification({ message, type });
+      };
+
+      const clearNotification = () => {
+        setNotification({ message: '', type: 'info' });
+      };
+
+      const handleConfirmLogout = async () => {
+        await supabase.auth.signOut();
+        setCurrentUser(null);
+        setShowLogoutModal(false);
+        showNotification('Signed out of RecMatch.', 'info');
+      };
+
+      return (
+        <div className="flex flex-col h-full w-full justify-between overflow-hidden">
+          
+          <ConfirmModal
+            isOpen={showLogoutModal}
+            title="Confirm Logout"
+            message="Are you sure you want to log out of RecMatch?"
+            confirmText="Logout"
+            confirmStyle="danger"
+            onConfirm={handleConfirmLogout}
+            onCancel={() => setShowLogoutModal(false)}
+          />
+
+          {!currentUser ? (
+            <div className="flex-1 flex flex-col justify-between overflow-y-auto">
+              <SystemBanner notification={notification} onClose={clearNotification} />
+              <AuthModule onAuthSuccess={setCurrentUser} showNotification={showNotification} />
+              <footer className="py-3 text-center text-[10px] text-slate-600 font-mono">
+                RecMatch Ormoc &copy; 2026
+              </footer>
+            </div>
+          ) : (
+            <div className="flex flex-col h-full justify-between">
+              
+              {/* TOP APP BAR */}
+              <header className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center font-extrabold text-xs">
+                    {currentUser.full_name ? currentUser.full_name.charAt(0) : 'U'}
+                  </div>
+                  <div>
+                    <h2 className="text-xs font-bold text-white leading-none">{currentUser.full_name}</h2>
+                    <p className="text-[10px] text-slate-400 capitalize mt-0.5">
+                      Role: <span className="text-brand-400 font-semibold">{currentUser.role === 'student' ? 'Player / User' : currentUser.role === 'dean' ? 'Court Organizer' : currentUser.role}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutModal(true)}
+                  className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-xl text-[10px] font-bold"
+                >
+                  Logout
+                </button>
+              </header>
+
+              <SystemBanner notification={notification} onClose={clearNotification} />
+
+              {/* MAIN CONTENT AREA */}
+              <main className="flex-1 overflow-y-auto">
+                {activeNavTab === 'zone' ? (
+                  <OrmocZoneSchedule />
+                ) : currentUser.role === 'admin' ? (
+                  <AdminDashboard currentUser={currentUser} showNotification={showNotification} refreshCourts={fetchApprovedCustomCourts} />
+                ) : currentUser.role === 'dean' ? (
+                  <OrganizerDashboard currentUser={currentUser} showNotification={showNotification} availableCourts={availableCourts} refreshCourts={fetchApprovedCustomCourts} />
+                ) : (
+                  <PlayerDashboard currentUser={currentUser} showNotification={showNotification} availableCourts={availableCourts} />
+                )}
+              </main>
+
+              {/* BOTTOM NAVIGATION BAR */}
+              <nav className="px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-around text-[10px]">
+                <button
+                  onClick={() => setActiveNavTab('main')}
+                  className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'main' ? 'text-brand-400 font-bold' : 'text-slate-400 opacity-60'}`}
+                >
+                  <span>🏀</span>
+                  <span>Dashboard</span>
+                </button>
+                <button
+                  onClick={() => setActiveNavTab('zone')}
+                  className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'zone' ? 'text-brand-400 font-bold' : 'text-slate-400 opacity-60'}`}
+                >
+                  <span>🏟️</span>
+                  <span>Ormoc Zone</span>
+                </button>
+                <div className="flex flex-col items-center gap-0.5 text-slate-400 opacity-60">
+                  <span>🛡️</span>
+                  <span>IAS Safe</span>
+                </div>
+              </nav>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
