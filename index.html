@@ -101,7 +101,7 @@
           'bg-slate-900/90 border-slate-700 text-slate-200'
         }`}>
           <div className="flex items-center gap-2.5">
-            <span className="text-base">{isError ? '⚠️' : isSuccess ? '✅' : 'ℹ️'}</span>
+            <span className="text-base">{isError ? '⚠️' : isSuccess ? '✅' : '🔑'}</span>
             <div className="space-y-0.5">
               <p className="font-bold uppercase tracking-wider text-[9px] opacity-80">
                 {isError ? 'System Alert' : isSuccess ? 'Success' : 'Notice'}
@@ -188,10 +188,10 @@
     }
 
     // =========================================================================
-    // 3. AUTHENTICATION MODULE
+    // 3. AUTHENTICATION MODULE (CUSTOM PROFILES TABLE OTP FLOW)
     // =========================================================================
     function AuthModule({ onAuthSuccess, showNotification }) {
-      const [activeTab, setActiveTab] = React.useState('login');
+      const [activeTab, setActiveTab] = React.useState('login'); // 'login' | 'register' | 'otp'
       
       const [loginEmail, setLoginEmail] = React.useState('');
       const [loginPassword, setLoginPassword] = React.useState('');
@@ -204,6 +204,13 @@
       const [regPassword, setRegPassword] = React.useState('');
       const [regConfirmPassword, setRegConfirmPassword] = React.useState('');
       const [regLoading, setRegLoading] = React.useState(false);
+
+      // Custom OTP state
+      const [otpEmail, setOtpEmail] = React.useState('');
+      const [otpCode, setOtpCode] = React.useState('');
+      const [generatedCode, setGeneratedCode] = React.useState(null);
+      const [otpSent, setOtpSent] = React.useState(false);
+      const [otpLoading, setOtpLoading] = React.useState(false);
 
       const validations = {
         length: regPassword.length >= 8,
@@ -243,11 +250,25 @@
             .maybeSingle();
 
           if (!profile) {
-            profile = {
+            const userRole = data.user.user_metadata?.role || (loginEmail.includes('admin') ? 'admin' : 'student');
+            const userName = data.user.user_metadata?.full_name || loginEmail.split('@')[0];
+
+            const { data: newProfile } = await supabase
+              .from('profiles')
+              .upsert({
+                id: data.user.id,
+                full_name: userName,
+                email: loginEmail,
+                role: userRole,
+              }, { onConflict: 'id' })
+              .select()
+              .single();
+
+            profile = newProfile || {
               id: data.user.id,
-              full_name: data.user.user_metadata?.full_name || loginEmail.split('@')[0],
+              full_name: userName,
               email: loginEmail,
-              role: data.user.user_metadata?.role || 'student',
+              role: userRole,
             };
           }
 
@@ -298,6 +319,15 @@
             return;
           }
 
+          if (data?.user) {
+            await supabase.from('profiles').upsert({
+              id: data.user.id,
+              full_name: regFullName,
+              email: regEmail,
+              role: regRole,
+            }, { onConflict: 'id' });
+          }
+
           showNotification('Account created successfully! Please sign in.', 'success');
           setActiveTab('login');
           setLoginEmail(regEmail);
@@ -305,6 +335,85 @@
           showNotification('Registration error. Please try again.', 'error');
         } finally {
           setRegLoading(false);
+        }
+      };
+
+      // 1. Generate OTP and save to profiles.otp_code table
+      const handleGenerateCustomOTP = async (e) => {
+        e.preventDefault();
+        if (!otpEmail.trim()) {
+          showNotification('Please enter your email address.', 'error');
+          return;
+        }
+
+        setOtpLoading(true);
+        try {
+          // Check if profile exists
+          let { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', otpEmail.trim())
+            .maybeSingle();
+
+          if (!profile) {
+            showNotification(`No account found for ${otpEmail}. Please register first.`, 'error');
+            setOtpLoading(false);
+            return;
+          }
+
+          // Generate a 6-digit random code
+          const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+
+          // Write code directly to profiles table
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ otp_code: newOtp })
+            .eq('id', profile.id);
+
+          if (updateError) {
+            showNotification(`Database error: ${updateError.message}`, 'error');
+          } else {
+            setGeneratedCode(newOtp);
+            setOtpSent(true);
+            showNotification(`YOUR OTP CODE IS: ${newOtp}`, 'success');
+          }
+        } catch (err) {
+          showNotification('Failed to generate OTP code.', 'error');
+        } finally {
+          setOtpLoading(false);
+        }
+      };
+
+      // 2. Verify OTP code against profiles.otp_code
+      const handleVerifyCustomOTP = async (e) => {
+        e.preventDefault();
+        if (!otpCode.trim()) {
+          showNotification('Please enter the verification code.', 'error');
+          return;
+        }
+
+        setOtpLoading(true);
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', otpEmail.trim())
+            .maybeSingle();
+
+          if (profile && profile.otp_code === otpCode.trim()) {
+            // Clear used OTP code
+            await supabase.from('profiles').update({ otp_code: null }).eq('id', profile.id);
+
+            await safeAuditLog(profile, 'OTP_TABLE_LOGIN', { email: profile.email });
+            showNotification(`OTP Verified! Welcome, ${profile.full_name}!`, 'success');
+            onAuthSuccess(profile);
+          } else {
+            showNotification('Invalid OTP code. Please check the code shown on screen.', 'error');
+          }
+        } catch (err) {
+          showNotification('Verification error. Please try again.', 'error');
+        } finally {
+          setOtpLoading(false);
         }
       };
 
@@ -318,24 +427,27 @@
             <p className="text-[11px] text-slate-400">Ormoc City Sports Court & Liga Portal</p>
           </div>
 
-          <div className="grid grid-cols-2 p-1 bg-slate-900 rounded-xl border border-slate-800">
+          <div className="grid grid-cols-3 p-1 bg-slate-900 rounded-xl border border-slate-800 text-[10px] font-bold">
             <button
               type="button"
-              onClick={() => setActiveTab('login')}
-              className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                activeTab === 'login' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'
-              }`}
+              onClick={() => { setActiveTab('login'); setOtpSent(false); }}
+              className={`py-2 rounded-lg transition-all ${activeTab === 'login' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
             >
               Sign In
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('register')}
-              className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                activeTab === 'register' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'
-              }`}
+              onClick={() => { setActiveTab('register'); setOtpSent(false); }}
+              className={`py-2 rounded-lg transition-all ${activeTab === 'register' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
             >
               Sign Up
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('otp')}
+              className={`py-2 rounded-lg transition-all ${activeTab === 'otp' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
+            >
+              🔑 OTP Access
             </button>
           </div>
 
@@ -379,6 +491,21 @@
               >
                 {loginLoading ? 'Signing In...' : 'Sign In'}
               </button>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (loginEmail.trim()) {
+                      setOtpEmail(loginEmail.trim());
+                    }
+                    setActiveTab('otp');
+                  }}
+                  className="text-[11px] font-semibold text-brand-400 hover:text-brand-300 transition-colors"
+                >
+                  Forgot Password?
+                </button>
+              </div>
             </form>
           )}
 
@@ -461,6 +588,75 @@
                 {regLoading ? 'Registering...' : 'Register Account'}
               </button>
             </form>
+          )}
+
+          {activeTab === 'otp' && (
+            <div className="space-y-3.5">
+              {!otpSent ? (
+                <form onSubmit={handleGenerateCustomOTP} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Account Email</label>
+                    <input
+                      type="email"
+                      value={otpEmail}
+                      onChange={(e) => setOtpEmail(e.target.value)}
+                      placeholder="e.g., j@gmail.com"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                    />
+                  </div>
+
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    Generates a code saved directly in your <code className="text-brand-400 font-mono">profiles.otp_code</code> database column.
+                  </p>
+
+                  <button
+                    type="submit"
+                    disabled={otpLoading}
+                    className="w-full py-3 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                  >
+                    {otpLoading ? 'Generating...' : 'Generate OTP Code'}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyCustomOTP} className="space-y-3">
+                  {generatedCode && (
+                    <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 rounded-xl text-center space-y-1">
+                      <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Your Local OTP Code</p>
+                      <p className="text-2xl font-mono font-extrabold text-white tracking-widest">{generatedCode}</p>
+                      <p className="text-[9px] text-emerald-300/80">Saved to Supabase profiles table for {otpEmail}</p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Enter Code Above</label>
+                    <input
+                      type="text"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                      placeholder="123456"
+                      maxLength={6}
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-center font-mono text-sm tracking-widest text-white outline-none focus:border-brand-500"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={otpLoading}
+                    className="w-full py-3 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                  >
+                    {otpLoading ? 'Verifying...' : 'Verify OTP & Log In'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setOtpSent(false); setGeneratedCode(null); }}
+                    className="w-full text-[10px] text-slate-400 hover:text-white text-center font-bold"
+                  >
+                    ← Back to Generate OTP
+                  </button>
+                </form>
+              )}
+            </div>
           )}
         </div>
       );
@@ -685,14 +881,12 @@
     // 6. COURT ORGANIZER LIGA & NEW COURT CREATOR DASHBOARD
     // =========================================================================
     function OrganizerDashboard({ currentUser, showNotification, availableCourts, refreshCourts }) {
-      const [organizerTab, setOrganizerTab] = React.useState('liga'); // 'liga' | 'new_court' | 'approvals'
+      const [organizerTab, setOrganizerTab] = React.useState('liga');
       
-      // Liga proposal fields
       const [ligaTitle, setLigaTitle] = React.useState('');
       const [selectedCourt, setSelectedCourt] = React.useState(availableCourts[0]?.name || 'Ormoc Superdome');
       const [reserveDate, setReserveDate] = React.useState(new Date().toISOString().split('T')[0]);
 
-      // New Court proposal fields
       const [newCourtName, setNewCourtName] = React.useState('');
       const [newCourtSport, setNewCourtSport] = React.useState('Basketball');
       const [newCourtRate, setNewCourtRate] = React.useState('150');
@@ -709,7 +903,6 @@
       const fetchOrganizerData = async () => {
         setLoading(true);
         
-        // 1. Fetch my submitted Ligas / Court proposals
         const { data: ligas } = await supabase
           .from('enrollments')
           .select('*')
@@ -718,7 +911,6 @@
 
         setMyLigas(ligas || []);
 
-        // 2. Fetch pending player reservation requests
         const { data: rawEnrollments } = await supabase
           .from('enrollments')
           .select('*')
@@ -842,7 +1034,6 @@
 
       return (
         <div className="p-4 space-y-4">
-          {/* ORGANIZER TAB TOGGLE */}
           <div className="grid grid-cols-3 p-1 bg-slate-900 rounded-xl border border-slate-800 text-[10px] font-bold">
             <button
               onClick={() => setOrganizerTab('liga')}
@@ -864,7 +1055,6 @@
             </button>
           </div>
 
-          {/* TAB 1: LIGA PROPOSAL */}
           {organizerTab === 'liga' && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
@@ -918,7 +1108,6 @@
             </div>
           )}
 
-          {/* TAB 2: PROPOSE NEW COURT */}
           {organizerTab === 'new_court' && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
@@ -982,7 +1171,6 @@
             </div>
           )}
 
-          {/* TAB 3: PLAYER RESERVATION APPROVALS */}
           {organizerTab === 'approvals' && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <h3 className="text-xs font-bold text-white flex items-center justify-between border-b border-slate-800 pb-2">
@@ -1031,7 +1219,6 @@
             </div>
           )}
 
-          {/* MY PROPOSALS */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
             <h3 className="text-xs font-bold text-white flex items-center justify-between border-b border-slate-800 pb-2">
               <span>📋 My Submitted Proposals (Ligas & Courts)</span>
@@ -1233,6 +1420,102 @@
     }
 
     // =========================================================================
+    // 7.5 USER PROFILE VIEW
+    // =========================================================================
+    function UserProfileView({ currentUser, showNotification }) {
+      const [fullName, setFullName] = React.useState(currentUser?.full_name || '');
+      const [updating, setUpdating] = React.useState(false);
+
+      const handleUpdateProfile = async (e) => {
+        e.preventDefault();
+        if (!fullName.trim()) {
+          showNotification('Full name cannot be empty.', 'error');
+          return;
+        }
+
+        setUpdating(true);
+        try {
+          const { error } = await supabase
+            .from('profiles')
+            .upsert({
+              id: currentUser.id,
+              full_name: fullName.trim(),
+              email: currentUser.email,
+              role: currentUser.role
+            }, { onConflict: 'id' });
+
+          if (error) {
+            showNotification(`Update failed: ${error.message}`, 'error');
+          } else {
+            currentUser.full_name = fullName.trim();
+            showNotification('Profile updated successfully!', 'success');
+            safeAuditLog(currentUser, 'UPDATE_PROFILE', { updated_name: fullName.trim() });
+          }
+        } catch (err) {
+          showNotification('Profile update error.', 'error');
+        } finally {
+          setUpdating(false);
+        }
+      };
+
+      return (
+        <div className="p-4 space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+              <div className="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/20 text-brand-400 font-extrabold text-lg flex items-center justify-center">
+                {currentUser?.full_name ? currentUser.full_name.charAt(0) : 'U'}
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">{currentUser?.full_name}</h3>
+                <p className="text-[10px] text-brand-400 capitalize font-mono">{currentUser?.role === 'student' ? 'Player / User' : currentUser?.role === 'dean' ? 'Court Organizer' : currentUser?.role}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleUpdateProfile} className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1">Email Address (Read-only)</label>
+                <input
+                  type="text"
+                  disabled
+                  value={currentUser?.email || ''}
+                  className="w-full px-3 py-2 bg-slate-950/50 border border-slate-800 rounded-xl text-xs text-slate-400 font-mono outline-none cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 mb-1">Account Role</label>
+                <input
+                  type="text"
+                  disabled
+                  value={currentUser?.role === 'student' ? 'Player / User' : currentUser?.role === 'dean' ? 'Court Organizer' : 'System Admin'}
+                  className="w-full px-3 py-2 bg-slate-950/50 border border-slate-800 rounded-xl text-xs text-slate-400 font-mono outline-none cursor-not-allowed"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={updating}
+                className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95 disabled:opacity-50"
+              >
+                {updating ? 'Saving Profile...' : 'Save Profile Changes'}
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    // =========================================================================
     // 8. MAIN APP SHELL & NAVIGATION
     // =========================================================================
     function App() {
@@ -1334,6 +1617,8 @@
               <main className="flex-1 overflow-y-auto">
                 {activeNavTab === 'zone' ? (
                   <OrmocZoneSchedule />
+                ) : activeNavTab === 'profile' ? (
+                  <UserProfileView currentUser={currentUser} showNotification={showNotification} />
                 ) : currentUser.role === 'admin' ? (
                   <AdminDashboard currentUser={currentUser} showNotification={showNotification} refreshCourts={fetchApprovedCustomCourts} />
                 ) : currentUser.role === 'dean' ? (
@@ -1359,10 +1644,13 @@
                   <span>🏟️</span>
                   <span>Ormoc Zone</span>
                 </button>
-                <div className="flex flex-col items-center gap-0.5 text-slate-400 opacity-60">
-                  <span>🛡️</span>
-                  <span>IAS Safe</span>
-                </div>
+                <button
+                  onClick={() => setActiveNavTab('profile')}
+                  className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'profile' ? 'text-brand-400 font-bold' : 'text-slate-400 opacity-60'}`}
+                >
+                  <span>👤</span>
+                  <span>Profile</span>
+                </button>
               </nav>
             </div>
           )}
