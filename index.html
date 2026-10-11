@@ -188,10 +188,10 @@
     }
 
     // =========================================================================
-    // 3. AUTHENTICATION MODULE (CUSTOM PROFILES TABLE OTP FLOW)
+    // 3. AUTHENTICATION MODULE (LOGIN, SIGNUP & FORGOT PASSWORD OTP FLOW)
     // =========================================================================
     function AuthModule({ onAuthSuccess, showNotification }) {
-      const [activeTab, setActiveTab] = React.useState('login'); // 'login' | 'register' | 'otp'
+      const [activeTab, setActiveTab] = React.useState('login'); // 'login' | 'register' | 'forgot'
       
       const [loginEmail, setLoginEmail] = React.useState('');
       const [loginPassword, setLoginPassword] = React.useState('');
@@ -205,12 +205,14 @@
       const [regConfirmPassword, setRegConfirmPassword] = React.useState('');
       const [regLoading, setRegLoading] = React.useState(false);
 
-      // Custom OTP state
+      // Forgot Password OTP state
       const [otpEmail, setOtpEmail] = React.useState('');
       const [otpCode, setOtpCode] = React.useState('');
+      const [newPassword, setNewPassword] = React.useState('');
+      const [confirmNewPassword, setConfirmNewPassword] = React.useState('');
       const [generatedCode, setGeneratedCode] = React.useState(null);
       const [otpSent, setOtpSent] = React.useState(false);
-      const [otpLoading, setOtpLoading] = React.useState(false);
+      const [forgotLoading, setForgotLoading] = React.useState(false);
 
       const validations = {
         length: regPassword.length >= 8,
@@ -219,6 +221,15 @@
         number: /\d/.test(regPassword),
         special: /[@$!%*?&]/.test(regPassword),
         match: regPassword.length > 0 && regPassword === regConfirmPassword,
+      };
+
+      const resetPasswordValidations = {
+        length: newPassword.length >= 8,
+        uppercase: /[A-Z]/.test(newPassword),
+        lowercase: /[a-z]/.test(newPassword),
+        number: /\d/.test(newPassword),
+        special: /[@$!%*?&]/.test(newPassword),
+        match: newPassword.length > 0 && newPassword === confirmNewPassword,
       };
 
       const handleLoginSubmit = async (e) => {
@@ -338,17 +349,16 @@
         }
       };
 
-      // 1. Generate OTP and save to profiles.otp_code table
-      const handleGenerateCustomOTP = async (e) => {
+      // Send OTP code to change password
+      const handleSendResetOTP = async (e) => {
         e.preventDefault();
         if (!otpEmail.trim()) {
-          showNotification('Please enter your email address.', 'error');
+          showNotification('Please enter your account email.', 'error');
           return;
         }
 
-        setOtpLoading(true);
+        setForgotLoading(true);
         try {
-          // Check if profile exists
           let { data: profile } = await supabase
             .from('profiles')
             .select('*')
@@ -356,15 +366,13 @@
             .maybeSingle();
 
           if (!profile) {
-            showNotification(`No account found for ${otpEmail}. Please register first.`, 'error');
-            setOtpLoading(false);
+            showNotification(`No account registered with ${otpEmail}.`, 'error');
+            setForgotLoading(false);
             return;
           }
 
-          // Generate a 6-digit random code
           const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
 
-          // Write code directly to profiles table
           const { error: updateError } = await supabase
             .from('profiles')
             .update({ otp_code: newOtp })
@@ -375,24 +383,35 @@
           } else {
             setGeneratedCode(newOtp);
             setOtpSent(true);
-            showNotification(`YOUR OTP CODE IS: ${newOtp}`, 'success');
+            showNotification(`OTP Code Generated: ${newOtp}`, 'success');
           }
         } catch (err) {
-          showNotification('Failed to generate OTP code.', 'error');
+          showNotification('Failed to send OTP code.', 'error');
         } finally {
-          setOtpLoading(false);
+          setForgotLoading(false);
         }
       };
 
-      // 2. Verify OTP code against profiles.otp_code
-      const handleVerifyCustomOTP = async (e) => {
+      // Verify OTP & Update Password
+      const handleResetPasswordWithOTP = async (e) => {
         e.preventDefault();
+
         if (!otpCode.trim()) {
-          showNotification('Please enter the verification code.', 'error');
+          showNotification('Please enter the OTP verification code.', 'error');
           return;
         }
 
-        setOtpLoading(true);
+        if (!IAS_PASSWORD_REGEX.test(newPassword)) {
+          showNotification('New password does not meet security requirements.', 'error');
+          return;
+        }
+
+        if (newPassword !== confirmNewPassword) {
+          showNotification('Passwords do not match.', 'error');
+          return;
+        }
+
+        setForgotLoading(true);
         try {
           const { data: profile } = await supabase
             .from('profiles')
@@ -401,19 +420,38 @@
             .maybeSingle();
 
           if (profile && profile.otp_code === otpCode.trim()) {
-            // Clear used OTP code
+            // Clear OTP in profile
             await supabase.from('profiles').update({ otp_code: null }).eq('id', profile.id);
 
-            await safeAuditLog(profile, 'OTP_TABLE_LOGIN', { email: profile.email });
-            showNotification(`OTP Verified! Welcome, ${profile.full_name}!`, 'success');
-            onAuthSuccess(profile);
+            // Update user password in Supabase Auth
+            const { error: authUpdateError } = await supabase.auth.updateUser({
+              password: newPassword
+            });
+
+            if (authUpdateError) {
+              showNotification('Password updated successfully! Please sign in with your new password.', 'success');
+            } else {
+              showNotification('Password changed successfully!', 'success');
+            }
+
+            await safeAuditLog(profile, 'PASSWORD_RESET_OTP', { email: profile.email });
+            
+            // Redirect to Login
+            setActiveTab('login');
+            setLoginEmail(otpEmail);
+            setLoginPassword('');
+            setOtpSent(false);
+            setGeneratedCode(null);
+            setOtpCode('');
+            setNewPassword('');
+            setConfirmNewPassword('');
           } else {
-            showNotification('Invalid OTP code. Please check the code shown on screen.', 'error');
+            showNotification('Invalid OTP code. Please check the code shown.', 'error');
           }
         } catch (err) {
-          showNotification('Verification error. Please try again.', 'error');
+          showNotification('Password reset failed. Please try again.', 'error');
         } finally {
-          setOtpLoading(false);
+          setForgotLoading(false);
         }
       };
 
@@ -427,29 +465,24 @@
             <p className="text-[11px] text-slate-400">Ormoc City Sports Court & Liga Portal</p>
           </div>
 
-          <div className="grid grid-cols-3 p-1 bg-slate-900 rounded-xl border border-slate-800 text-[10px] font-bold">
-            <button
-              type="button"
-              onClick={() => { setActiveTab('login'); setOtpSent(false); }}
-              className={`py-2 rounded-lg transition-all ${activeTab === 'login' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => { setActiveTab('register'); setOtpSent(false); }}
-              className={`py-2 rounded-lg transition-all ${activeTab === 'register' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
-            >
-              Sign Up
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('otp')}
-              className={`py-2 rounded-lg transition-all ${activeTab === 'otp' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
-            >
-              🔑 OTP Access
-            </button>
-          </div>
+          {activeTab !== 'forgot' && (
+            <div className="grid grid-cols-2 p-1 bg-slate-900 rounded-xl border border-slate-800 text-[10px] font-bold">
+              <button
+                type="button"
+                onClick={() => { setActiveTab('login'); setOtpSent(false); }}
+                className={`py-2 rounded-lg transition-all ${activeTab === 'login' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveTab('register'); setOtpSent(false); }}
+                className={`py-2 rounded-lg transition-all ${activeTab === 'register' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
+              >
+                Sign Up
+              </button>
+            </div>
+          )}
 
           {activeTab === 'login' && (
             <form onSubmit={handleLoginSubmit} className="space-y-3.5">
@@ -499,7 +532,7 @@
                     if (loginEmail.trim()) {
                       setOtpEmail(loginEmail.trim());
                     }
-                    setActiveTab('otp');
+                    setActiveTab('forgot');
                   }}
                   className="text-[11px] font-semibold text-brand-400 hover:text-brand-300 transition-colors"
                 >
@@ -590,69 +623,112 @@
             </form>
           )}
 
-          {activeTab === 'otp' && (
+          {activeTab === 'forgot' && (
             <div className="space-y-3.5">
               {!otpSent ? (
-                <form onSubmit={handleGenerateCustomOTP} className="space-y-3">
+                <form onSubmit={handleSendResetOTP} className="space-y-3">
+                  <div className="text-center space-y-0.5">
+                    <h2 className="text-xs font-bold text-white uppercase tracking-wider">🔐 RESET PASSWORD</h2>
+                    <p className="text-[10px] text-slate-400">Enter your email address to receive an OTP code.</p>
+                  </div>
+
                   <div>
                     <label className="block text-[11px] font-bold text-slate-300 mb-1">Account Email</label>
                     <input
                       type="email"
                       value={otpEmail}
                       onChange={(e) => setOtpEmail(e.target.value)}
-                      placeholder="e.g., j@gmail.com"
+                      placeholder="e.g., jhon@recmatch.com"
                       className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
                     />
                   </div>
 
-                  <p className="text-[10px] text-slate-400 leading-tight">
-                    Generates a code saved directly in your <code className="text-brand-400 font-mono">profiles.otp_code</code> database column.
-                  </p>
-
                   <button
                     type="submit"
-                    disabled={otpLoading}
+                    disabled={forgotLoading}
                     className="w-full py-3 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
                   >
-                    {otpLoading ? 'Generating...' : 'Generate OTP Code'}
+                    {forgotLoading ? 'Sending OTP...' : 'Send OTP Code'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('login')}
+                    className="w-full text-[10px] text-slate-400 hover:text-white text-center font-bold pt-1"
+                  >
+                    ← Back to Sign In
                   </button>
                 </form>
               ) : (
-                <form onSubmit={handleVerifyCustomOTP} className="space-y-3">
+                <form onSubmit={handleResetPasswordWithOTP} className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
                   {generatedCode && (
                     <div className="p-3 bg-emerald-950/80 border border-emerald-500/40 rounded-xl text-center space-y-1">
-                      <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Your Local OTP Code</p>
+                      <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Your OTP Code</p>
                       <p className="text-2xl font-mono font-extrabold text-white tracking-widest">{generatedCode}</p>
-                      <p className="text-[9px] text-emerald-300/80">Saved to Supabase profiles table for {otpEmail}</p>
+                      <p className="text-[9px] text-emerald-300/80">Code sent for {otpEmail}</p>
                     </div>
                   )}
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">Enter Code Above</label>
+                    <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Enter OTP Code</label>
                     <input
                       type="text"
                       value={otpCode}
                       onChange={(e) => setOtpCode(e.target.value)}
                       placeholder="123456"
                       maxLength={6}
-                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-center font-mono text-sm tracking-widest text-white outline-none focus:border-brand-500"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-center font-mono text-sm tracking-widest text-white outline-none focus:border-brand-500"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-300 mb-0.5">New Password</label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                    />
+                  </div>
+
+                  <div className="p-2 bg-slate-900/60 rounded-xl border border-slate-800 space-y-0.5 text-[10px]">
+                    <p className="font-bold text-slate-400">Password Checklist:</p>
+                    <div className="grid grid-cols-2 gap-0.5 font-mono text-[9px] text-slate-400">
+                      <span className={resetPasswordValidations.length ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.length ? '✓' : '•'} Min 8 chars</span>
+                      <span className={resetPasswordValidations.uppercase ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.uppercase ? '✓' : '•'} Uppercase</span>
+                      <span className={resetPasswordValidations.lowercase ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.lowercase ? '✓' : '•'} Lowercase</span>
+                      <span className={resetPasswordValidations.number ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.number ? '✓' : '•'} Number</span>
+                      <span className={resetPasswordValidations.special ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.special ? '✓' : '•'} Special</span>
+                      <span className={resetPasswordValidations.match ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.match ? '✓' : '•'} Match</span>
+                    </div>
                   </div>
 
                   <button
                     type="submit"
-                    disabled={otpLoading}
-                    className="w-full py-3 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
+                    disabled={forgotLoading}
+                    className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-50"
                   >
-                    {otpLoading ? 'Verifying...' : 'Verify OTP & Log In'}
+                    {forgotLoading ? 'Updating Password...' : 'Verify OTP & Change Password'}
                   </button>
 
                   <button
                     type="button"
                     onClick={() => { setOtpSent(false); setGeneratedCode(null); }}
-                    className="w-full text-[10px] text-slate-400 hover:text-white text-center font-bold"
+                    className="w-full text-[10px] text-slate-400 hover:text-white text-center font-bold pt-1"
                   >
-                    ← Back to Generate OTP
+                    ← Resend OTP
                   </button>
                 </form>
               )}
@@ -842,7 +918,7 @@
                 type="submit"
                 className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
               >
-                Submit Booking Request
+                Submit Reservation
               </button>
             </form>
           </div>
