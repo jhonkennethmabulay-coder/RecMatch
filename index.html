@@ -57,7 +57,32 @@
     // IAS Strict Password Policy
     const IAS_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 
-    // Helper: Safe Audit Logging
+    // Helper: Check if a schedule string (e.g. "2026-10-14 @ 16:00") is in the past
+    const isSchedulePast = (scheduleStr) => {
+      if (!scheduleStr) return false;
+      const parts = scheduleStr.split(' @ ');
+      if (parts.length < 2) return false;
+      const datePart = parts[0].replace('Date: ', '').trim();
+      const timePart = parts[1].trim();
+      const scheduleDate = new Date(`${datePart}T${timePart}`);
+      return isNaN(scheduleDate.getTime()) ? false : scheduleDate < new Date();
+    };
+
+    // Map Location Pin SVG Logo
+    function MapPinLogo({ className = "w-8 h-8" }) {
+      return (
+        <svg className={className} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M50 5C27.9086 5 10 22.9086 10 45C10 68 50 95 50 95C50 95 90 68 90 45C90 22.9086 72.0914 5 50 5Z" fill="#F8FAFC" />
+          <circle cx="50" cy="42" r="22" fill="#0D9488" />
+          <path d="M28 42H72" stroke="#F8FAFC" strokeWidth="2.5" />
+          <path d="M50 20V64" stroke="#F8FAFC" strokeWidth="2.5" />
+          <path d="M33 30C38 35 38 49 33 54" stroke="#F8FAFC" strokeWidth="2.5" fill="none" />
+          <path d="M67 30C62 35 62 49 67 54" stroke="#F8FAFC" strokeWidth="2.5" fill="none" />
+        </svg>
+      );
+    }
+
+    // Safe Audit Logging
     const safeAuditLog = async (currentUser, action, details = {}) => {
       try {
         if (!currentUser) return;
@@ -68,9 +93,7 @@
           action: action,
           details: details
         });
-      } catch (e) {
-        // Suppress audit log permissions errors
-      }
+      } catch (e) {}
     };
 
     // Default Ormoc City Sports Courts
@@ -167,22 +190,29 @@
       );
     }
 
-    function StatusBadge({ status }) {
-      const styles = {
-        submitted: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-        dean_approved: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-        rejected: 'bg-red-500/10 text-red-400 border-red-500/20',
-      }[status] || 'bg-slate-800 text-slate-400 border-slate-700';
+    function StatusBadge({ status, scheduleStr }) {
+      const isPast = isSchedulePast(scheduleStr);
+      
+      let styles = 'bg-slate-800 text-slate-400 border-slate-700';
+      let label = status;
 
-      const labels = {
-        submitted: 'Pending Approval',
-        dean_approved: 'Approved',
-        rejected: 'Declined',
-      }[status] || status;
+      if (isPast && (status === 'Approved' || status === 'dean_approved')) {
+        styles = 'bg-slate-800/80 text-slate-400 border-slate-700';
+        label = 'Expired (Free)';
+      } else if (status === 'submitted' || status === 'Pending') {
+        styles = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+        label = 'Pending Approval';
+      } else if (status === 'dean_approved' || status === 'Approved') {
+        styles = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+        label = 'Approved / Occupied';
+      } else if (status === 'rejected' || status === 'Declined') {
+        styles = 'bg-red-500/10 text-red-400 border-red-500/20';
+        label = 'Declined';
+      }
 
       return (
         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border ${styles}`}>
-          {labels}
+          {label}
         </span>
       );
     }
@@ -200,9 +230,11 @@
 
       const [regFullName, setRegFullName] = React.useState('');
       const [regEmail, setRegEmail] = React.useState('');
-      const [regRole, setRegRole] = React.useState('student');
+      const [regRole, setRegRole] = React.useState('Player / User');
       const [regPassword, setRegPassword] = React.useState('');
       const [regConfirmPassword, setRegConfirmPassword] = React.useState('');
+      const [showRegPassword, setShowRegPassword] = React.useState(false);
+      const [showRegConfirmPassword, setShowRegConfirmPassword] = React.useState(false);
       const [regLoading, setRegLoading] = React.useState(false);
 
       // Forgot Password OTP state
@@ -261,7 +293,8 @@
             .maybeSingle();
 
           if (!profile) {
-            const userRole = data.user.user_metadata?.role || (loginEmail.includes('admin') ? 'admin' : 'student');
+            const rawRole = data.user.user_metadata?.role || (loginEmail.includes('admin') ? 'Admin' : 'Player / User');
+            const userRole = rawRole === 'student' ? 'Player / User' : rawRole === 'dean' ? 'Organizer' : rawRole === 'admin' ? 'Admin' : rawRole;
             const userName = data.user.user_metadata?.full_name || loginEmail.split('@')[0];
 
             const { data: newProfile } = await supabase
@@ -281,6 +314,10 @@
               email: loginEmail,
               role: userRole,
             };
+          } else {
+            if (profile.role === 'student') profile.role = 'Player / User';
+            if (profile.role === 'dean') profile.role = 'Organizer';
+            if (profile.role === 'admin') profile.role = 'Admin';
           }
 
           showNotification(`Welcome back, ${profile.full_name}!`, 'success');
@@ -453,8 +490,8 @@
       return (
         <div className="p-5 flex-1 flex flex-col justify-center space-y-5">
           <div className="text-center space-y-1">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/20 text-brand-400 font-bold text-2xl shadow-inner mb-1">
-              🏀
+            <div className="inline-flex items-center justify-center p-2 rounded-2xl bg-brand-500/10 border border-brand-500/20 shadow-inner mb-1">
+              <MapPinLogo className="w-10 h-10" />
             </div>
             <h1 className="text-xl font-extrabold tracking-tight text-white">RecMatch</h1>
             <p className="text-[11px] text-slate-400">Ormoc City Sports Court & Liga Portal</p>
@@ -568,32 +605,50 @@
                   onChange={(e) => setRegRole(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
                 >
-                  <option value="student">Player / User</option>
-                  <option value="dean">Court Organizer</option>
-                  <option value="admin">System Admin</option>
+                  <option value="Player / User">Player / User</option>
+                  <option value="Organizer">Organizer</option>
+                  <option value="Admin">Admin</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Password</label>
-                <input
-                  type="password"
-                  value={regPassword}
-                  onChange={(e) => setRegPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showRegPassword ? 'text' : 'password'}
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-3 pr-12 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegPassword(!showRegPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-white font-bold"
+                  >
+                    {showRegPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Confirm Password</label>
-                <input
-                  type="password"
-                  value={regConfirmPassword}
-                  onChange={(e) => setRegConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showRegConfirmPassword ? 'text' : 'password'}
+                    value={regConfirmPassword}
+                    onChange={(e) => setRegConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-3 pr-12 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-white font-bold"
+                  >
+                    {showRegConfirmPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
               </div>
 
               <div className="p-2.5 bg-slate-900/60 rounded-xl border border-slate-800 space-y-1 text-[10px]">
@@ -604,7 +659,7 @@
                   <span className={validations.lowercase ? 'text-brand-400 font-bold' : ''}>{validations.lowercase ? '✓' : '•'} Lowercase</span>
                   <span className={validations.number ? 'text-brand-400 font-bold' : ''}>{validations.number ? '✓' : '•'} Number</span>
                   <span className={validations.special ? 'text-brand-400 font-bold' : ''}>{validations.special ? '✓' : '•'} Special (@$!%*?&)</span>
-                  <span className={validations.match ? 'text-brand-400 font-bold' : ''}>{validations.match ? '✓' : '•'} Match</span>
+                  <span className={validations.match ? 'text-brand-400 font-bold' : ''}>{validations.match ? '✓' : '•'} Password Match</span>
                 </div>
               </div>
 
@@ -706,7 +761,7 @@
                       <span className={resetPasswordValidations.lowercase ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.lowercase ? '✓' : '•'} Lowercase</span>
                       <span className={resetPasswordValidations.number ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.number ? '✓' : '•'} Number</span>
                       <span className={resetPasswordValidations.special ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.special ? '✓' : '•'} Special</span>
-                      <span className={resetPasswordValidations.match ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.match ? '✓' : '•'} Match</span>
+                      <span className={resetPasswordValidations.match ? 'text-brand-400 font-bold' : ''}>{resetPasswordValidations.match ? '✓' : '•'} Password Match</span>
                     </div>
                   </div>
 
@@ -749,10 +804,13 @@
         const { data } = await supabase
           .from('enrollments')
           .select('*')
-          .eq('status', 'dean_approved')
+          .in('status', ['dean_approved', 'Approved'])
           .order('submitted_at', { ascending: false });
 
-        setApprovedLigas(data || []);
+        // Filter out expired schedules automatically
+        const activeSchedules = (data || []).filter(item => !isSchedulePast(item.semester));
+
+        setApprovedLigas(activeSchedules);
         setLoading(false);
       };
 
@@ -760,18 +818,18 @@
         <div className="p-4 space-y-4">
           <div className="text-center space-y-1 border-b border-slate-800 pb-3">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center justify-center gap-1.5">
-              <span>📅</span>Court & League Schedules
+              <span>📅</span> Official Court Schedule
             </h3>
-            <p className="text-[10px] text-slate-400">Approved Tournaments & Reserved Court Timetable</p>
+            <p className="text-[10px] text-slate-400">Approved Active Tournaments & Reserved Court Timetable</p>
           </div>
 
           {loading ? (
-            <LoadingSpinner label="Fetching official court schedules..." />
+            <LoadingSpinner label="Fetching active court schedules..." />
           ) : approvedLigas.length === 0 ? (
             <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl text-center space-y-2">
               <span className="text-2xl">🏀</span>
               <p className="text-xs text-slate-400 font-semibold">All Courts Currently Free for Booking!</p>
-              <p className="text-[10px] text-slate-500">No scheduled Admin/Organizer-approved bookings for today.</p>
+              <p className="text-[10px] text-slate-500">No active reserved court bookings at this moment.</p>
             </div>
           ) : (
             <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
@@ -783,7 +841,7 @@
                       <p className="text-[10px] text-slate-300 font-mono">📅 {item.semester || 'Scheduled'}</p>
                     </div>
                     <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-bold rounded-full">
-                      ✓ Reserved / Occupied
+                      Already Occupied
                     </span>
                   </div>
                 </div>
@@ -801,6 +859,7 @@
       const [bookings, setBookings] = React.useState([]);
       const [openLeagues, setOpenLeagues] = React.useState([]);
       const [loading, setLoading] = React.useState(true);
+      const [submittingBooking, setSubmittingBooking] = React.useState(false);
       const [selectedCourt, setSelectedCourt] = React.useState(availableCourts[0]?.id || 'c1');
       const [reserveDate, setReserveDate] = React.useState(new Date().toISOString().split('T')[0]);
       const [reserveTime, setReserveTime] = React.useState("16:00");
@@ -834,7 +893,7 @@
         const { data } = await supabase
           .from('enrollments')
           .select('*')
-          .eq('status', 'dean_approved')
+          .in('status', ['dean_approved', 'Approved'])
           .like('course_program', '%LIGA:%')
           .order('submitted_at', { ascending: false });
 
@@ -850,29 +909,56 @@
           return;
         }
 
-        await supabase.from('profiles').upsert({
-          id: currentUser.id,
-          full_name: currentUser.full_name || currentUser.email.split('@')[0],
-          email: currentUser.email,
-          role: currentUser.role || 'student'
-        }, { onConflict: 'id' });
-
         const scheduleString = `${reserveDate} @ ${reserveTime}`;
 
-        const { error } = await supabase.from('enrollments').insert({
-          student_id: currentUser.id,
-          course_program: `${court.name}`,
-          academic_year: "2026",
-          semester: scheduleString,
-          status: 'submitted',
-        }).select();
+        if (isSchedulePast(scheduleString)) {
+          showNotification('Cannot reserve a time slot in the past.', 'error');
+          return;
+        }
 
-        if (error) {
-          showNotification(`Booking failed: ${error.message}`, 'error');
-        } else {
-          showNotification(`Court reserved for ${scheduleString}!`, 'success');
-          safeAuditLog(currentUser, 'SUBMIT_COURT_RESERVATION', { court_name: court.name, schedule: scheduleString });
-          fetchMyBookings();
+        setSubmittingBooking(true);
+
+        try {
+          // Check collision across all players
+          const { data: existingBookings } = await supabase
+            .from('enrollments')
+            .select('*')
+            .eq('course_program', court.name)
+            .eq('semester', scheduleString)
+            .in('status', ['submitted', 'Pending', 'dean_approved', 'Approved']);
+
+          if (existingBookings && existingBookings.length > 0) {
+            showNotification(`Already Occupied: ${court.name} is reserved or pending for ${scheduleString}!`, 'error');
+            setSubmittingBooking(false);
+            return;
+          }
+
+          await supabase.from('profiles').upsert({
+            id: currentUser.id,
+            full_name: currentUser.full_name || currentUser.email.split('@')[0],
+            email: currentUser.email,
+            role: currentUser.role || 'Player / User'
+          }, { onConflict: 'id' });
+
+          const { error } = await supabase.from('enrollments').insert({
+            student_id: currentUser.id,
+            course_program: `${court.name}`,
+            academic_year: "2026",
+            semester: scheduleString,
+            status: 'Pending',
+          }).select();
+
+          if (error) {
+            showNotification(`Booking failed: ${error.message}`, 'error');
+          } else {
+            showNotification(`Court reserved for ${scheduleString}!`, 'success');
+            safeAuditLog(currentUser, 'SUBMIT_COURT_RESERVATION', { court_name: court.name, schedule: scheduleString });
+            fetchMyBookings();
+          }
+        } catch (err) {
+          showNotification('Error checking reservation collision.', 'error');
+        } finally {
+          setSubmittingBooking(false);
         }
       };
 
@@ -899,7 +985,7 @@
             course_program: formattedDetails,
             academic_year: "2026",
             semester: activeModalLeague.semester || 'Pending Schedule',
-            status: 'submitted',
+            status: 'Pending',
           });
 
           if (error) {
@@ -1050,11 +1136,11 @@
                     <div key={b.id} className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl space-y-1.5">
                       <div className="flex items-start justify-between gap-2">
                         <p className="font-bold text-xs text-white leading-tight">{b.course_program}</p>
-                        <StatusBadge status={b.status} />
+                        <StatusBadge status={b.status} scheduleStr={b.semester} />
                       </div>
                       <div className="flex justify-between items-center text-[10px] text-brand-400 font-mono">
                         <span>Schedule: {b.semester || 'Pending Schedule'}</span>
-                        <span className="text-slate-500">{b.status === 'dean_approved' ? 'Approved' : 'Pending'}</span>
+                        <span className="text-slate-500">{isSchedulePast(b.semester) ? 'Expired' : (b.status === 'Approved' || b.status === 'dean_approved') ? 'Approved' : 'Pending'}</span>
                       </div>
                     </div>
                   ))}
@@ -1116,9 +1202,10 @@
 
                 <button
                   type="submit"
-                  className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
+                  disabled={submittingBooking}
+                  className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95 disabled:opacity-50"
                 >
-                  Submit Reservation
+                  {submittingBooking ? 'Checking Slot Availability...' : 'Submit Reservation'}
                 </button>
               </form>
             </div>
@@ -1240,7 +1327,7 @@
           id: currentUser.id,
           full_name: currentUser.full_name || currentUser.email.split('@')[0],
           email: currentUser.email,
-          role: 'dean'
+          role: 'Organizer'
         }, { onConflict: 'id' });
 
         const fullLigaName = `🏆 LIGA: ${ligaTitle.trim()} @ ${selectedCourt}`;
@@ -1250,7 +1337,7 @@
           course_program: fullLigaName,
           academic_year: "2026",
           semester: `Date: ${reserveDate}`,
-          status: 'submitted',
+          status: 'Pending',
         }).select();
 
         if (error) {
@@ -1275,7 +1362,7 @@
           id: currentUser.id,
           full_name: currentUser.full_name || currentUser.email.split('@')[0],
           email: currentUser.email,
-          role: 'dean'
+          role: 'Organizer'
         }, { onConflict: 'id' });
 
         const courtTag = `🏟️ NEW COURT PROPOSAL: ${newCourtName.trim()} (₱${newCourtRate}/hr) - ${newCourtSport} [Loc: ${newCourtLocation.trim()}]`;
@@ -1285,7 +1372,7 @@
           course_program: courtTag,
           academic_year: "2026",
           semester: `Location: ${newCourtLocation.trim()}`,
-          status: 'submitted',
+          status: 'Pending',
         }).select();
 
         if (error) {
@@ -1309,7 +1396,7 @@
         if (error) {
           showNotification(`Action failed: ${error.message}`, 'error');
         } else {
-          showNotification(`Player reservation ${status === 'dean_approved' ? 'Approved' : 'Declined'} successfully!`, 'success');
+          showNotification(`Player reservation ${status === 'Approved' ? 'Approved' : 'Declined'} successfully!`, 'success');
           safeAuditLog(currentUser, 'ORGANIZER_DECISION', { request_id: id, status: status });
           fetchOrganizerData();
         }
@@ -1337,22 +1424,22 @@
                             <p className="font-bold text-xs text-white">{req.profiles?.full_name || 'Player'}</p>
                             <p className="text-[10px] text-slate-500">{req.profiles?.email}</p>
                           </div>
-                          <StatusBadge status={req.status} />
+                          <StatusBadge status={req.status} scheduleStr={req.semester} />
                         </div>
 
                         <p className="text-xs font-bold text-brand-400">{req.course_program}</p>
                         <p className="text-[10px] text-slate-300 font-mono">📅 {req.semester}</p>
 
-                        {req.status === 'submitted' && (
+                        {(req.status === 'submitted' || req.status === 'Pending') && (
                           <div className="grid grid-cols-2 gap-2 pt-1">
                             <button
-                              onClick={() => handleOrganizerApprove(req.id, 'dean_approved')}
+                              onClick={() => handleOrganizerApprove(req.id, 'Approved')}
                               className="py-1.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold rounded-lg text-[10px] active:scale-95"
                             >
                               Approve
                             </button>
                             <button
-                              onClick={() => handleOrganizerApprove(req.id, 'rejected')}
+                              onClick={() => handleOrganizerApprove(req.id, 'Declined')}
                               className="py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 font-bold rounded-lg text-[10px] active:scale-95"
                             >
                               Decline
@@ -1380,7 +1467,7 @@
                       <div key={l.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
                         <div className="flex justify-between items-start">
                           <p className="text-xs font-bold text-white leading-tight">{l.course_program}</p>
-                          <StatusBadge status={l.status} />
+                          <StatusBadge status={l.status} scheduleStr={l.semester} />
                         </div>
                         <p className="text-[10px] text-brand-400 font-mono">{l.semester || 'Date Unspecified'}</p>
                       </div>
@@ -1513,7 +1600,7 @@
     }
 
     // =========================================================================
-    // 7. ADMIN LIGA, COURT APPROVAL & AUDIT LOG MODULE
+    // 7. ADMIN LIGA & COURT PROPOSAL APPROVAL DESK
     // =========================================================================
     function AdminDashboard({ currentUser, showNotification, refreshCourts }) {
       const [activeSubTab, setActiveSubTab] = React.useState('approvals');
@@ -1574,7 +1661,7 @@
         setLogs(data || []);
       };
 
-      const handleApproveProposal = async (id, status) => {
+      const handleAdminApprove = async (id, status) => {
         const { error } = await supabase
           .from('enrollments')
           .update({ status: status })
@@ -1584,7 +1671,7 @@
         if (error) {
           showNotification(`Approval error: ${error.message}`, 'error');
         } else {
-          showNotification(`Proposal ${status === 'dean_approved' ? 'Approved' : 'Declined'} successfully!`, 'success');
+          showNotification(`Proposal ${status === 'Approved' ? 'Approved' : 'Declined'} successfully!`, 'success');
           safeAuditLog(currentUser, 'ADMIN_DECISION', { proposal_id: id, status: status });
           fetchProposals();
           if (refreshCourts) refreshCourts();
@@ -1615,46 +1702,52 @@
           {activeSubTab === 'approvals' && (
             <div className="space-y-3">
               <h3 className="text-xs font-bold text-white border-b border-slate-800 pb-2">
-                Admin Desk (Ligas, Courts & Reservations)
+                Admin Approvals Desk (Organizer Ligas & Courts)
               </h3>
 
               {loading ? (
                 <LoadingSpinner label="Fetching proposals..." />
               ) : pendingProposals.length === 0 ? (
-                <p className="text-xs text-slate-500 py-6 text-center">No pending items for review.</p>
+                <p className="text-xs text-slate-500 py-6 text-center">No system records available.</p>
               ) : (
                 <div className="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
-                  {pendingProposals.map((item) => (
-                    <div key={item.id} className="p-3 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-bold text-xs text-white">{item.profiles?.full_name || 'Organizer / User'}</p>
-                          <p className="text-[10px] text-slate-500">{item.profiles?.email}</p>
-                        </div>
-                        <StatusBadge status={item.status} />
-                      </div>
-                      
-                      <p className="text-xs font-bold text-brand-400 leading-snug">{item.course_program}</p>
-                      <p className="text-[10px] text-slate-300 font-mono">📅 {item.semester || 'Date Unspecified'}</p>
+                  {pendingProposals.map((item) => {
+                    // Check if the record is an Organizer Proposal (Liga or New Court)
+                    const isOrganizerProposal = item.course_program.includes('🏆 LIGA:') || item.course_program.includes('🏟️ NEW COURT PROPOSAL');
 
-                      {item.status === 'submitted' && (
-                        <div className="grid grid-cols-2 gap-2 pt-1">
-                          <button
-                            onClick={() => handleApproveProposal(item.id, 'dean_approved')}
-                            className="py-1.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold rounded-lg text-[10px] active:scale-95"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => handleApproveProposal(item.id, 'rejected')}
-                            className="py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 font-bold rounded-lg text-[10px] active:scale-95"
-                          >
-                            Decline
-                          </button>
+                    return (
+                      <div key={item.id} className="p-3 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-xs text-white">{item.profiles?.full_name || 'Organizer / User'}</p>
+                            <p className="text-[10px] text-slate-500">{item.profiles?.email}</p>
+                          </div>
+                          <StatusBadge status={item.status} scheduleStr={item.semester} />
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        
+                        <p className="text-xs font-bold text-brand-400 leading-snug">{item.course_program}</p>
+                        <p className="text-[10px] text-slate-300 font-mono">📅 {item.semester || 'Date Unspecified'}</p>
+
+                        {/* Admin only sees Approve/Decline for Organizer Proposals */}
+                        {isOrganizerProposal && (item.status === 'submitted' || item.status === 'Pending') && (
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <button
+                              onClick={() => handleAdminApprove(item.id, 'Approved')}
+                              className="py-1.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold rounded-lg text-[10px] active:scale-95"
+                            >
+                              Approve Proposal
+                            </button>
+                            <button
+                              onClick={() => handleAdminApprove(item.id, 'Declined')}
+                              className="py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 font-bold rounded-lg text-[10px] active:scale-95"
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1728,12 +1821,12 @@
         <div className="p-4 space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
             <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
-              <div className="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/20 text-brand-400 font-extrabold text-lg flex items-center justify-center">
-                {currentUser?.full_name ? currentUser.full_name.charAt(0) : 'U'}
+              <div className="w-10 h-10 rounded-2xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center p-1">
+                <MapPinLogo className="w-8 h-8" />
               </div>
               <div>
                 <h3 className="text-sm font-bold text-white">{currentUser?.full_name}</h3>
-                <p className="text-[10px] text-brand-400 capitalize font-mono">{currentUser?.role === 'student' ? 'Player / User' : currentUser?.role === 'dean' ? 'Court Organizer' : currentUser?.role}</p>
+                <p className="text-[10px] text-brand-400 capitalize font-mono">{currentUser?.role}</p>
               </div>
             </div>
 
@@ -1763,7 +1856,7 @@
                 <input
                   type="text"
                   disabled
-                  value={currentUser?.role === 'student' ? 'Player / User' : currentUser?.role === 'dean' ? 'Court Organizer' : 'System Admin'}
+                  value={currentUser?.role || 'Player / User'}
                   className="w-full px-3 py-2 bg-slate-950/50 border border-slate-800 rounded-xl text-xs text-slate-400 font-mono outline-none cursor-not-allowed"
                 />
               </div>
@@ -1799,7 +1892,7 @@
         const { data } = await supabase
           .from('enrollments')
           .select('*')
-          .eq('status', 'dean_approved')
+          .in('status', ['dean_approved', 'Approved'])
           .like('course_program', '%NEW COURT PROPOSAL%');
 
         if (data && data.length > 0) {
@@ -1845,8 +1938,9 @@
         showNotification('Signed out of RecMatch.', 'info');
       };
 
-      const isPlayer = currentUser?.role === 'student' || !currentUser?.role;
-      const isOrganizer = currentUser?.role === 'dean';
+      const isPlayer = currentUser?.role === 'Player / User' || currentUser?.role === 'student' || !currentUser?.role;
+      const isOrganizer = currentUser?.role === 'Organizer' || currentUser?.role === 'dean';
+      const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'admin';
 
       return (
         <div className="flex flex-col h-full w-full justify-between overflow-hidden">
@@ -1866,10 +1960,8 @@
               <SystemBanner notification={notification} onClose={clearNotification} />
               <AuthModule onAuthSuccess={(user) => {
                 setCurrentUser(user);
-                if (user.role === 'dean') {
+                if (user.role === 'Organizer' || user.role === 'dean') {
                   setActiveNavTab('approvals');
-                } else if (user.role === 'student') {
-                  setActiveNavTab('home');
                 } else {
                   setActiveNavTab('home');
                 }
@@ -1884,13 +1976,13 @@
               {/* TOP APP BAR */}
               <header className="px-4 py-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center font-extrabold text-xs">
-                    {currentUser.full_name ? currentUser.full_name.charAt(0) : 'U'}
+                  <div className="w-8 h-8 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center p-0.5 shadow-sm shrink-0">
+                    <MapPinLogo className="w-6 h-6" />
                   </div>
                   <div>
                     <h2 className="text-xs font-bold text-white leading-none">{currentUser.full_name}</h2>
                     <p className="text-[10px] text-slate-400 capitalize mt-0.5">
-                      Role: <span className="text-brand-400 font-semibold">{currentUser.role === 'student' ? 'Player / User' : currentUser.role === 'dean' ? 'Court Organizer' : currentUser.role}</span>
+                      Role: <span className="text-brand-400 font-semibold">{currentUser.role}</span>
                     </p>
                   </div>
                 </div>
@@ -1912,7 +2004,7 @@
                   <OrmocZoneSchedule />
                 ) : activeNavTab === 'profile' ? (
                   <UserProfileView currentUser={currentUser} showNotification={showNotification} />
-                ) : currentUser.role === 'admin' ? (
+                ) : isAdmin ? (
                   <AdminDashboard currentUser={currentUser} showNotification={showNotification} refreshCourts={fetchApprovedCustomCourts} />
                 ) : isOrganizer ? (
                   <OrganizerDashboard currentUser={currentUser} showNotification={showNotification} availableCourts={availableCourts} refreshCourts={fetchApprovedCustomCourts} activeNavTab={activeNavTab} />
