@@ -494,7 +494,7 @@
               <MapPinLogo className="w-10 h-10" />
             </div>
             <h1 className="text-xl font-extrabold tracking-tight text-white">RecMatch</h1>
-            <p className="text-[11px] text-slate-400">Ormoc City Sports Court & Liga Portal</p>
+            <p className="text-[11px] text-slate-400">Ormoc City Sports Court & League </p>
           </div>
 
           {activeTab !== 'forgot' && (
@@ -818,7 +818,7 @@
         <div className="p-4 space-y-4">
           <div className="text-center space-y-1 border-b border-slate-800 pb-3">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center justify-center gap-1.5">
-              <span>📅</span> Official Court Schedule
+              <span>📅</span> Official Court & League Schedule
             </h3>
             <p className="text-[10px] text-slate-400">Approved Active Tournaments & Reserved Court Timetable</p>
           </div>
@@ -977,7 +977,7 @@
 
         setSubmittingLeague(true);
         try {
-          const leagueTitleClean = activeModalLeague.course_program.replace('🏆 LIGA: ', '');
+          const leagueTitleClean = activeModalLeague.course_program.replace('🏆 LEAGUE: ', '');
           const formattedDetails = `🏆 LEAGUE REGISTRATION: ${leagueTitleClean} | Mode: ${regType.toUpperCase()}${regType === 'team' ? ` (Team: ${teamName.trim()})` : ''} | Pay: ${paymentMethod.toUpperCase()}${paymentMethod === 'gcash' ? ` [Ref: ${gcashRef.trim()}]` : ''}${rosterList ? ` | Roster: ${rosterList.trim()}` : ''}`;
 
           const { error } = await supabase.from('enrollments').insert({
@@ -1021,10 +1021,26 @@
                   <button onClick={() => setActiveModalLeague(null)} className="text-slate-400 hover:text-white font-bold text-xs">✕</button>
                 </div>
 
-                <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-xs">
-                  <p className="font-bold text-brand-400">{activeModalLeague.course_program.replace('🏆 LIGA: ', '')}</p>
-                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">📅 {activeModalLeague.semester}</p>
-                </div>
+                {(() => {
+                  const rawTitle = activeModalLeague.course_program.replace('🏆 LEAGUE: ', '');
+                  const feeMatch = rawTitle.match(/\(Fee:\s*₱?(\d+)\)/i);
+                  const cleanTitle = rawTitle.replace(/\s*\(Fee:\s*₱?\d+\)/i, '');
+                  const feeVal = feeMatch ? feeMatch[1] : null;
+
+                  return (
+                    <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-1">
+                      <div className="flex justify-between items-start gap-2">
+                        <p className="font-bold text-brand-400 leading-snug">{cleanTitle}</p>
+                        {feeVal && (
+                          <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-extrabold rounded-md shrink-0">
+                            ₱{feeVal}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-mono">📅 {activeModalLeague.semester}</p>
+                    </div>
+                  );
+                })()}
 
                 <form onSubmit={handleLeagueRegistrationSubmit} className="space-y-3 text-xs">
                   <div>
@@ -1123,7 +1139,7 @@
           {playerNavTab === 'home' && (
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
               <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                <span>📋</span> My Court & League Registrations
+                <span>📋</span>Court & League Registrations
               </h3>
 
               {loading ? (
@@ -1224,22 +1240,38 @@
                 <p className="text-xs text-slate-500 py-6 text-center">No active leagues open for registration.</p>
               ) : (
                 <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
-                  {openLeagues.map((league) => (
-                    <div key={league.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-                      <div className="flex justify-between items-start gap-2">
-                        <div>
-                          <p className="font-bold text-xs text-brand-400">{league.course_program.replace('🏆 LIGA: ', '')}</p>
-                          <p className="text-[10px] text-slate-400 font-mono">📅 {league.semester}</p>
+                  {openLeagues.map((league) => {
+                    const rawTitle = league.course_program.replace('🏆 LEAGUE: ', '');
+                    const feeMatch = rawTitle.match(/\(Fee:\s*₱?(\d+)\)/i);
+                    const cleanTitle = rawTitle.replace(/\s*\(Fee:\s*₱?\d+\)/i, '');
+                    const feeVal = feeMatch ? feeMatch[1] : null;
+
+                    return (
+                      <div key={league.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                        <div className="flex justify-between items-start gap-2">
+                          <div>
+                            <p className="font-bold text-xs text-brand-400 leading-tight">{cleanTitle}</p>
+                            <p className="text-[10px] text-slate-400 font-mono mt-0.5">📅 {league.semester}</p>
+                            {feeVal ? (
+                              <p className="text-[10px] font-bold text-emerald-400 font-mono mt-1 flex items-center gap-1">
+                                <span>💵 Fee:</span> <span>₱{feeVal}</span>
+                              </p>
+                            ) : (
+                              <p className="text-[10px] font-semibold text-slate-500 font-mono mt-1">
+                                💵 Free Entry / On-Site Pay
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => setActiveModalLeague(league)}
+                            className="px-3 py-1.5 bg-brand-500 hover:bg-brand-400 text-slate-950 text-[10px] font-extrabold rounded-lg transition-all shadow active:scale-95 shrink-0"
+                          >
+                            Join League
+                          </button>
                         </div>
-                        <button
-                          onClick={() => setActiveModalLeague(league)}
-                          className="px-3 py-1.5 bg-brand-500 hover:bg-brand-400 text-slate-950 text-[10px] font-extrabold rounded-lg transition-all shadow active:scale-95 shrink-0"
-                        >
-                          Join League
-                        </button>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1254,17 +1286,55 @@
     // =========================================================================
     function OrganizerDashboard({ currentUser, showNotification, availableCourts, refreshCourts, activeNavTab }) {
       const [ligaTitle, setLigaTitle] = React.useState('');
+      const [selectedSport, setSelectedSport] = React.useState('Basketball');
+      const [customSport, setCustomSport] = React.useState('');
       const [selectedCourt, setSelectedCourt] = React.useState(availableCourts[0]?.name || 'Ormoc Superdome Activity Center');
+      const [ligaFee, setLigaFee] = React.useState('500');
       const [reserveDate, setReserveDate] = React.useState(new Date().toISOString().split('T')[0]);
 
       const [newCourtName, setNewCourtName] = React.useState('');
-      const [newCourtSport, setNewCourtSport] = React.useState('Basketball');
+      const [courtType, setCourtType] = React.useState('Covered Court');
+      const [customCourtType, setCustomCourtType] = React.useState('');
+      const [courtSport, setCourtSport] = React.useState('Basketball');
+      const [customCourtSport, setCustomCourtSport] = React.useState('');
       const [newCourtRate, setNewCourtRate] = React.useState('150');
-      const [newCourtLocation, setNewCourtLocation] = React.useState('');
 
       const [myLigas, setMyLigas] = React.useState([]);
       const [playerRequests, setPlayerRequests] = React.useState([]);
       const [loading, setLoading] = React.useState(true);
+
+      const sportOptions = [
+        "Basketball",
+        "Volleyball",
+        "Badminton",
+        "Lawn Tennis",
+        "Futsal",
+        "Pickleball",
+        "Table Tennis"
+        
+      ];
+
+      const courtTypeOptions = [
+        "Covered Court",
+        "Open Court",
+        "Gymnasium / Indoor",
+        "Activity Center",
+        "Multipurpose Hall",
+        "Sand / Beach Court"
+        
+      ];
+
+      const courtSportOptions = [
+        "Basketball",
+        "Volleyball",
+        "Badminton",
+        "Lawn Tennis",
+        "Futsal",
+        "Pickleball",
+        "Table Tennis"
+        
+        
+      ];
 
       React.useEffect(() => {
         fetchOrganizerData();
@@ -1323,6 +1393,8 @@
           return;
         }
 
+        const finalSport = selectedSport === 'Other' ? (customSport.trim() || 'Sports') : selectedSport;
+
         await supabase.from('profiles').upsert({
           id: currentUser.id,
           full_name: currentUser.full_name || currentUser.email.split('@')[0],
@@ -1330,7 +1402,7 @@
           role: 'Organizer'
         }, { onConflict: 'id' });
 
-        const fullLigaName = `🏆 LIGA: ${ligaTitle.trim()} @ ${selectedCourt}`;
+        const fullLigaName = `🏆 LEAGUE: [${finalSport}] ${ligaTitle.trim()} @ ${selectedCourt} (Fee: ₱${ligaFee || '0'})`;
 
         const { error } = await supabase.from('enrollments').insert({
           student_id: currentUser.id,
@@ -1345,6 +1417,8 @@
         } else {
           showNotification(`Liga proposal "${ligaTitle}" sent to Admin for approval!`, 'success');
           setLigaTitle('');
+          setCustomSport('');
+          setLigaFee('500');
           safeAuditLog(currentUser, 'CREATE_LIGA_PROPOSAL', { liga: fullLigaName });
           fetchOrganizerData();
         }
@@ -1353,10 +1427,14 @@
       const handleProposeNewCourt = async (e) => {
         e.preventDefault();
 
-        if (!newCourtName.trim() || !newCourtLocation.trim()) {
-          showNotification('Court Name and Location are required.', 'error');
+        if (!newCourtName.trim()) {
+          showNotification('Court / Facility Name is required.', 'error');
           return;
         }
+
+        const finalCourtType = courtType === 'Other' ? (customCourtType.trim() || 'Facility') : courtType;
+        const finalCourtSport = courtSport === 'Other' ? (customCourtSport.trim() || 'Multipurpose') : courtSport;
+        const finalLocation = 'Ormoc City Zone';
 
         await supabase.from('profiles').upsert({
           id: currentUser.id,
@@ -1365,13 +1443,13 @@
           role: 'Organizer'
         }, { onConflict: 'id' });
 
-        const courtTag = `🏟️ NEW COURT PROPOSAL: ${newCourtName.trim()} (₱${newCourtRate}/hr) - ${newCourtSport} [Loc: ${newCourtLocation.trim()}]`;
+        const courtTag = `🏟️ NEW COURT PROPOSAL: ${newCourtName.trim()} [${finalCourtType}] (₱${newCourtRate}/hr) - ${finalCourtSport} @ ${finalLocation}`;
 
         const { error } = await supabase.from('enrollments').insert({
           student_id: currentUser.id,
           course_program: courtTag,
           academic_year: "2026",
-          semester: `Location: ${newCourtLocation.trim()}`,
+          semester: `Location: ${finalLocation}`,
           status: 'Pending',
         }).select();
 
@@ -1380,7 +1458,8 @@
         } else {
           showNotification(`Court facility "${newCourtName}" sent to Admin for approval!`, 'success');
           setNewCourtName('');
-          setNewCourtLocation('');
+          setCustomCourtType('');
+          setCustomCourtSport('');
           safeAuditLog(currentUser, 'PROPOSE_NEW_COURT', { court_name: newCourtName });
           fetchOrganizerData();
         }
@@ -1408,7 +1487,7 @@
             <>
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
                 <h3 className="text-xs font-bold text-white flex items-center justify-between border-b border-slate-800 pb-2">
-                  <span>⚡ Player Reservation & League Approvals Desk</span>
+                  <span>⚡ Reservations & League Approvals </span>
                 </h3>
 
                 {loading ? (
@@ -1454,7 +1533,7 @@
 
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
                 <h3 className="text-xs font-bold text-white flex items-center justify-between border-b border-slate-800 pb-2">
-                  <span>📋 My Submitted Proposals (Ligas & Courts)</span>
+                  <span>📋 Submitted Proposals (Leagues & Courts)</span>
                 </h3>
 
                 {loading ? (
@@ -1483,7 +1562,7 @@
               <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                 <span>🏆</span> Propose a League Game
               </h3>
-              <p className="text-[10px] text-slate-400">Requires Admin Approval before taking court availability.</p>
+            
 
               <form onSubmit={handleCreateLiga} className="space-y-3">
                 <div>
@@ -1499,6 +1578,19 @@
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Select Sport</label>
+                    <select
+                      value={selectedSport}
+                      onChange={(e) => setSelectedSport(e.target.value)}
+                      className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                    >
+                      {sportOptions.map((sport) => (
+                        <option key={sport} value={sport}>{sport}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
                     <label className="block text-[10px] font-bold text-slate-400 mb-1">Select Court</label>
                     <select
                       value={selectedCourt}
@@ -1512,6 +1604,33 @@
                       ))}
                     </select>
                   </div>
+                </div>
+
+                {selectedSport === 'Other' && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Specify Custom Sport</label>
+                    <input
+                      type="text"
+                      value={customSport}
+                      onChange={(e) => setCustomSport(e.target.value)}
+                      placeholder="e.g., Sepak Takraw, Dodgeball..."
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Registration Fee (₱)</label>
+                    <input
+                      type="number"
+                      value={ligaFee}
+                      onChange={(e) => setLigaFee(e.target.value)}
+                      placeholder="500"
+                      className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                    />
+                  </div>
+
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 mb-1">Tournament Date</label>
                     <input
@@ -1527,7 +1646,7 @@
                   type="submit"
                   className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
                 >
-                  Submit Liga for Admin Approval
+                  Submit League
                 </button>
               </form>
             </div>
@@ -1538,7 +1657,7 @@
               <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                 <span>🏟️</span> Propose a New Ormoc City Court
               </h3>
-              <p className="text-[10px] text-slate-400">Newly proposed courts require Admin Approval to appear publicly.</p>
+            
 
               <form onSubmit={handleProposeNewCourt} className="space-y-3">
                 <div>
@@ -1554,15 +1673,18 @@
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Sport Type</label>
-                    <input
-                      type="text"
-                      value={newCourtSport}
-                      onChange={(e) => setNewCourtSport(e.target.value)}
-                      placeholder="e.g., Basketball / Badminton"
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Court Type</label>
+                    <select
+                      value={courtType}
+                      onChange={(e) => setCourtType(e.target.value)}
                       className="w-full px-2.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
-                    />
+                    >
+                      {courtTypeOptions.map((type) => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
+                    </select>
                   </div>
+
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 mb-1">Hourly Rate (₱)</label>
                     <input
@@ -1575,22 +1697,50 @@
                   </div>
                 </div>
 
+                {courtType === 'Other' && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Specify Custom Court Type</label>
+                    <input
+                      type="text"
+                      value={customCourtType}
+                      onChange={(e) => setCustomCourtType(e.target.value)}
+                      placeholder="e.g., Rooftop Arena, Turf..."
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                    />
+                  </div>
+                )}
+
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 mb-1">Location / Barangay</label>
-                  <input
-                    type="text"
-                    value={newCourtLocation}
-                    onChange={(e) => setNewCourtLocation(e.target.value)}
-                    placeholder="e.g., Brgy. Ipil, Ormoc City"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
-                  />
+                  <label className="block text-[10px] font-bold text-slate-400 mb-1">Select Sport</label>
+                  <select
+                    value={courtSport}
+                    onChange={(e) => setCourtSport(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                  >
+                    {courtSportOptions.map((sport) => (
+                      <option key={sport} value={sport}>{sport}</option>
+                    ))}
+                  </select>
                 </div>
+
+                {courtSport === 'Other' && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Specify Custom Sport</label>
+                    <input
+                      type="text"
+                      value={customCourtSport}
+                      onChange={(e) => setCustomCourtSport(e.target.value)}
+                      placeholder="e.g., Futsal, Skatepark..."
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
+                    />
+                  </div>
+                )}
 
                 <button
                   type="submit"
                   className="w-full py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
                 >
-                  Propose Court for Admin Approval
+                  Submit Court 
                 </button>
               </form>
             </div>
@@ -1702,7 +1852,7 @@
           {activeSubTab === 'approvals' && (
             <div className="space-y-3">
               <h3 className="text-xs font-bold text-white border-b border-slate-800 pb-2">
-                Admin Approvals Desk (Organizer Ligas & Courts)
+                Admin Approvals Desk (Organizer Leagues & Courts)
               </h3>
 
               {loading ? (
@@ -1712,8 +1862,7 @@
               ) : (
                 <div className="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
                   {pendingProposals.map((item) => {
-                    // Check if the record is an Organizer Proposal (Liga or New Court)
-                    const isOrganizerProposal = item.course_program.includes('🏆 LIGA:') || item.course_program.includes('🏟️ NEW COURT PROPOSAL');
+                    const isOrganizerProposal = item.course_program.includes('🏆 LEAGUE:') || item.course_program.includes('🏟️ NEW COURT PROPOSAL');
 
                     return (
                       <div key={item.id} className="p-3 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
@@ -1728,7 +1877,6 @@
                         <p className="text-xs font-bold text-brand-400 leading-snug">{item.course_program}</p>
                         <p className="text-[10px] text-slate-300 font-mono">📅 {item.semester || 'Date Unspecified'}</p>
 
-                        {/* Admin only sees Approve/Decline for Organizer Proposals */}
                         {isOrganizerProposal && (item.status === 'submitted' || item.status === 'Pending') && (
                           <div className="grid grid-cols-2 gap-2 pt-1">
                             <button
@@ -1898,16 +2046,14 @@
         if (data && data.length > 0) {
           const customCourts = data.map((item) => {
             let pureName = item.course_program.replace('🏟️ NEW COURT PROPOSAL: ', '');
-            if (pureName.includes(' (₱')) {
-              pureName = pureName.split(' (₱')[0];
-            } else if (pureName.includes(' [Loc:')) {
-              pureName = pureName.split(' [Loc:')[0];
+            if (pureName.includes(' [')) {
+              pureName = pureName.split(' [')[0];
             }
 
             const rateMatch = item.course_program.match(/₱(\d+)\/hr/);
             const rateVal = rateMatch ? parseInt(rateMatch[1], 10) : 150;
 
-            const sportMatch = item.course_program.match(/-\s*(.*?)\s*\[Loc:/);
+            const sportMatch = item.course_program.match(/-\s*(.*?)\s*@/);
             const sportVal = sportMatch ? sportMatch[1] : 'Multipurpose Sports';
 
             return {
@@ -1915,7 +2061,7 @@
               name: pureName.trim(),
               sport: sportVal,
               rate: rateVal,
-              location: item.semester?.replace('Location: ', '') || 'Ormoc City'
+              location: 'Ormoc City'
             };
           });
 
