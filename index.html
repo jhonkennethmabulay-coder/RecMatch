@@ -57,7 +57,7 @@
     // IAS Strict Password Policy
     const IAS_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 
-    // Helper: Format 24-hour time string (e.g. "2026-10-20 @ 17:00") into AM/PM (e.g. "2026-10-20 @ 05:00 PM")
+    // Helper: Format 24-hour time string into AM/PM
     const formatScheduleTo12Hour = (scheduleStr) => {
       if (!scheduleStr) return '';
       if (!scheduleStr.includes(' @ ')) return scheduleStr;
@@ -75,7 +75,7 @@
 
       const ampm = hours >= 12 ? 'PM' : 'AM';
       hours = hours % 12;
-      hours = hours ? hours : 12; // the hour '0' should be '12'
+      hours = hours ? hours : 12;
       const formattedHours = hours < 10 ? '0' + hours : hours;
 
       const cleanDatePart = datePart.replace('Date: ', '').trim();
@@ -502,7 +502,7 @@
       return (
         <div className="p-5 flex-1 flex flex-col justify-center space-y-5">
           <div className="text-center space-y-1">
-            <div className="inline-flex items-center justify-center p-2 rounded-2xl bg-brand-500/10 border border-brand-500/20 shadow-inner mb-1">
+            <div className="inline-flex items-center justify-center p-2 rounded-2xl bg-brand-500/10 border border-brand-500/25 shadow-inner mb-1">
               <MapPinLogo className="w-10 h-10" />
             </div>
             <h1 className="text-xl font-extrabold tracking-tight text-white">RecMatch</h1>
@@ -1448,13 +1448,21 @@
       const [courtFile, setCourtFile] = React.useState(null);
       const [courtImagePreview, setCourtImagePreview] = React.useState('');
 
+      // Edit / Change Image Modal State
+      const [editingItem, setEditingItem] = React.useState(null);
+      const [editName, setEditName] = React.useState('');
+      const [editLocation, setEditLocation] = React.useState('');
+      const [editRate, setEditRate] = React.useState('');
+      const [editImagePreview, setEditImagePreview] = React.useState('');
+
       // Live Camera Modal State
       const [showCameraModal, setShowCameraModal] = React.useState(false);
+      const [isEditCamera, setIsEditCamera] = React.useState(false);
       const videoRef = React.useRef(null);
       const canvasRef = React.useRef(null);
       const [cameraStream, setCameraStream] = React.useState(null);
 
-      const [myLigas, setMyLigas] = React.useState([]);
+      const [myProposals, setMyProposals] = React.useState([]);
       const [playerRequests, setPlayerRequests] = React.useState([]);
       const [loading, setLoading] = React.useState(true);
 
@@ -1478,13 +1486,13 @@
       const fetchOrganizerData = async () => {
         setLoading(true);
         
-        const { data: ligas } = await supabase
+        const { data: proposals } = await supabase
           .from('enrollments')
           .select('*')
           .eq('student_id', currentUser.id)
           .order('submitted_at', { ascending: false });
 
-        setMyLigas(ligas || []);
+        setMyProposals(proposals || []);
 
         const { data: rawEnrollments } = await supabase
           .from('enrollments')
@@ -1520,17 +1528,17 @@
         setLoading(false);
       };
 
-      const handleFileChange = (e) => {
+      const handleFileChange = (e, isEdit = false) => {
         const file = e.target.files[0];
         if (file) {
-          setCourtFile(file);
           const reader = new FileReader();
           reader.onload = (event) => {
             const img = new Image();
             img.onload = () => {
               const canvas = document.createElement('canvas');
-              const MAX_WIDTH = 120;
-              const MAX_HEIGHT = 90;
+              // High definition dimensions for crisp & clear images
+              const MAX_WIDTH = 900;
+              const MAX_HEIGHT = 700;
               let width = img.width;
               let height = img.height;
 
@@ -1549,9 +1557,17 @@
               canvas.width = width;
               canvas.height = height;
               const ctx = canvas.getContext('2d');
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
               ctx.drawImage(img, 0, 0, width, height);
-              const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-              setCourtImagePreview(dataUrl);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
+              
+              if (isEdit) {
+                setEditImagePreview(dataUrl);
+              } else {
+                setCourtFile(file);
+                setCourtImagePreview(dataUrl);
+              }
             };
             img.src = event.target.result;
           };
@@ -1559,16 +1575,21 @@
         }
       };
 
-      const startCamera = async () => {
+      const startCamera = (isEdit = false) => {
+        setIsEditCamera(isEdit);
         setShowCameraModal(true);
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-          setCameraStream(stream);
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
+          navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }).then(stream => {
+            setCameraStream(stream);
+            if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+            }
+          }).catch(() => {
+            showNotification('Unable to access camera. Please check permissions.', 'error');
+            setShowCameraModal(false);
+          });
         } catch (err) {
-          showNotification('Unable to access camera. Please check camera permissions.', 'error');
+          showNotification('Camera error.', 'error');
           setShowCameraModal(false);
         }
       };
@@ -1585,14 +1606,21 @@
         if (videoRef.current && canvasRef.current) {
           const video = videoRef.current;
           const canvas = canvasRef.current;
-          canvas.width = video.videoWidth || 320;
-          canvas.height = video.videoHeight || 240;
+          canvas.width = video.videoWidth || 1280;
+          canvas.height = video.videoHeight || 720;
           const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-          setCourtImagePreview(dataUrl);
-          setCourtFile({ name: 'camera_capture.jpg' });
-          showNotification('Photo captured successfully!', 'success');
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+          if (isEditCamera) {
+            setEditImagePreview(dataUrl);
+          } else {
+            setCourtImagePreview(dataUrl);
+            setCourtFile({ name: 'camera_capture.jpg' });
+          }
+          showNotification('Photo captured in high definition!', 'success');
           stopCamera();
         }
       };
@@ -1633,7 +1661,7 @@
         if (error) {
           showNotification(`League submission error: ${error.message}`, 'error');
         } else {
-          showNotification(`League "${ligaTitle}" created successfully and published to players!`, 'success');
+          showNotification(`League "${ligaTitle}" created successfully and published!`, 'success');
           setLigaTitle('');
           setCustomSport('');
           setLigaFee('500');
@@ -1688,6 +1716,79 @@
         }
       };
 
+      const handleDeleteItem = async (id, title) => {
+        if (!confirm(`Are you sure you want to delete "${title}"?`)) return;
+
+        const { error } = await supabase
+          .from('enrollments')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          showNotification(`Failed to delete: ${error.message}`, 'error');
+        } else {
+          showNotification('Deleted successfully!', 'success');
+          safeAuditLog(currentUser, 'DELETE_ORGANIZER_ITEM', { item_id: id, title: title });
+          fetchOrganizerData();
+          if (refreshCourts) refreshCourts();
+        }
+      };
+
+      const openEditModal = (item) => {
+        setEditingItem(item);
+        const isCourt = item.course_program.includes('🏟️ NEW COURT PROPOSAL');
+        
+        if (isCourt) {
+          let nameClean = item.course_program.replace('🏟️ NEW COURT PROPOSAL: ', '');
+          if (nameClean.includes(' (₱')) nameClean = nameClean.split(' (₱')[0];
+          setEditName(nameClean.trim());
+
+          const rateMatch = item.course_program.match(/₱(\d+)\/hr/);
+          setEditRate(rateMatch ? rateMatch[1] : '200');
+
+          const locMatch = item.course_program.match(/@\s*(.*)$/);
+          setEditLocation(locMatch ? locMatch[1].trim() : 'Ormoc City');
+        } else {
+          setEditName(item.course_program);
+          setEditLocation('');
+          setEditRate('');
+        }
+
+        setEditImagePreview(item.academic_year && item.academic_year.startsWith('data:image') ? item.academic_year : '');
+      };
+
+      const handleUpdateItem = async (e) => {
+        e.preventDefault();
+        if (!editingItem) return;
+
+        const isCourt = editingItem.course_program.includes('🏟️ NEW COURT PROPOSAL');
+        let updatedProgram = editName.trim();
+
+        if (isCourt) {
+          updatedProgram = `🏟️ NEW COURT PROPOSAL: ${editName.trim()} (₱${editRate}/hr) - Basketball @ ${editLocation.trim()}`;
+        }
+
+        const { error } = await supabase
+          .from('enrollments')
+          .update({
+            course_program: updatedProgram,
+            academic_year: editImagePreview || editingItem.academic_year,
+            semester: isCourt ? `Loc: ${editLocation.trim()} | Att: Updated` : editingItem.semester,
+            status: isCourt ? 'Pending' : editingItem.status
+          })
+          .eq('id', editingItem.id);
+
+        if (error) {
+          showNotification(`Update failed: ${error.message}`, 'error');
+        } else {
+          showNotification('Updated successfully!', 'success');
+          safeAuditLog(currentUser, 'UPDATE_ORGANIZER_ITEM', { item_id: editingItem.id });
+          setEditingItem(null);
+          fetchOrganizerData();
+          if (refreshCourts) refreshCourts();
+        }
+      };
+
       const handleOrganizerApprove = async (id, status) => {
         const { error } = await supabase
           .from('enrollments')
@@ -1713,7 +1814,7 @@
               <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-4 shadow-2xl space-y-3">
                 <div className="flex justify-between items-center border-b border-slate-800 pb-2">
                   <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <span>📷</span> Take Court Photo
+                    <span>📷</span> Take Court Photo (HD)
                   </h3>
                   <button onClick={stopCamera} className="text-slate-400 hover:text-white font-bold text-xs">✕</button>
                 </div>
@@ -1736,9 +1837,99 @@
                     onClick={capturePhoto}
                     className="py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md active:scale-95"
                   >
-                    Capture Photo
+                    Capture HD Photo
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* EDIT / CHANGE IMAGE MODAL */}
+          {editingItem && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fade-in">
+              <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-3.5 max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>✏️</span> Edit Court / League & Change Image
+                  </h3>
+                  <button onClick={() => setEditingItem(null)} className="text-slate-400 hover:text-white font-bold text-xs">✕</button>
+                </div>
+
+                <form onSubmit={handleUpdateItem} className="space-y-3 text-xs">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Name / Title</label>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                    />
+                  </div>
+
+                  {editingItem.course_program.includes('🏟️ NEW COURT PROPOSAL') && (
+                    <>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 mb-1">Hourly Rate (₱)</label>
+                        <input
+                          type="number"
+                          value={editRate}
+                          onChange={(e) => setEditRate(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 mb-1">Location</label>
+                        <input
+                          type="text"
+                          value={editLocation}
+                          onChange={(e) => setEditLocation(e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Change Image (HD)</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleFileChange(e, true)}
+                        className="w-full px-2 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-[10px] text-slate-300 outline-none file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[9px] file:font-semibold file:bg-brand-500 file:text-slate-950 hover:file:bg-brand-400 cursor-pointer"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => startCamera(true)}
+                        className="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-brand-400 border border-slate-700 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all"
+                      >
+                        <span>📷</span> Camera HD
+                      </button>
+                    </div>
+                  </div>
+
+                  {editImagePreview && (
+                    <div className="w-full h-32 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden relative">
+                      <img src={editImagePreview} alt="Edit Preview" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingItem(null)}
+                      className="py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold rounded-xl text-xs shadow"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}
@@ -1793,24 +1984,51 @@
 
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
                 <h3 className="text-xs font-bold text-white flex items-center justify-between border-b border-slate-800 pb-2">
-                  <span>📋 My Published Leagues</span>
+                  <span>📋 My Published Leagues & Proposed Courts</span>
                 </h3>
 
                 {loading ? (
                   <LoadingSpinner label="Fetching proposals..." />
-                ) : myLigas.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-4 text-center">No leagues created yet.</p>
+                ) : myProposals.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-4 text-center">No leagues or court proposals created yet.</p>
                 ) : (
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                    {myLigas.map((l) => (
-                      <div key={l.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-                        <div className="flex justify-between items-start">
-                          <p className="text-xs font-bold text-white leading-tight">{l.course_program}</p>
-                          <StatusBadge status={l.status} scheduleStr={l.semester} />
+                  <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+                    {myProposals.map((item) => {
+                      const imgData = item.academic_year && item.academic_year.startsWith('data:image') ? item.academic_year : null;
+
+                      return (
+                        <div key={item.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                          <div className="flex justify-between items-start gap-2">
+                            <p className="font-bold text-xs text-white leading-tight flex-1">{item.course_program}</p>
+                            <StatusBadge status={item.status} scheduleStr={item.semester} />
+                          </div>
+
+                          {imgData && (
+                            <div className="w-full h-32 rounded-xl bg-slate-900 overflow-hidden border border-slate-800 shadow-md">
+                              <img src={imgData} alt="Proposal Attachment" className="w-full h-full object-cover" />
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-[10px] text-brand-400 font-mono">📅 {formatScheduleTo12Hour(item.semester) || 'Active'}</span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => openEditModal(item)}
+                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-brand-400 text-[10px] font-bold rounded-lg transition-all"
+                              >
+                                Edit / Image
+                              </button>
+                              <button
+                                onClick={() => handleDeleteItem(item.id, item.course_program)}
+                                className="px-2.5 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-[10px] font-bold rounded-lg transition-all"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-[10px] text-brand-400 font-mono">{formatScheduleTo12Hour(l.semester) || 'Date Unspecified'}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1956,28 +2174,28 @@
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 mb-1">Court Picture / Document File</label>
+                  <label className="block text-[10px] font-bold text-slate-400 mb-1">Court Picture / Document File (HD)</label>
                   <div className="grid grid-cols-2 gap-2">
                     <input
                       type="file"
                       accept="image/*,.pdf"
-                      onChange={handleFileChange}
+                      onChange={(e) => handleFileChange(e, false)}
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 outline-none file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-brand-500 file:text-slate-950 hover:file:bg-brand-400 cursor-pointer"
                     />
                     <button
                       type="button"
-                      onClick={startCamera}
+                      onClick={() => startCamera(false)}
                       className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-brand-400 border border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow active:scale-95"
                     >
-                      <span>📷</span> Take Photo
+                      <span>📷</span> HD Camera
                     </button>
                   </div>
                 </div>
 
                 {courtImagePreview && (
-                  <div className="w-full h-28 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden relative">
+                  <div className="w-full h-32 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden relative shadow-md">
                     <img src={courtImagePreview} alt="Preview" className="w-full h-full object-cover" />
-                    <span className="absolute bottom-1 right-1 px-2 py-0.5 bg-slate-900/80 text-[9px] text-brand-400 font-mono rounded">Preview</span>
+                    <span className="absolute bottom-1 right-1 px-2 py-0.5 bg-slate-900/90 text-[9px] text-brand-400 font-mono rounded">HD Preview</span>
                   </div>
                 )}
 
@@ -2123,7 +2341,7 @@
                         <p className="text-xs font-bold text-brand-400 leading-snug">{item.course_program}</p>
                         
                         {imgData && (
-                          <div className="w-full h-28 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden">
+                          <div className="w-full h-32 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden shadow-md">
                             <img src={imgData} alt="Court Proposal" className="w-full h-full object-cover" />
                           </div>
                         )}
@@ -2222,7 +2440,7 @@
         <div className="p-4 space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-4">
             <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
-              <div className="w-10 h-10 rounded-2xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center p-1">
+              <div className="w-10 h-10 rounded-2xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center p-1">
                 <MapPinLogo className="w-8 h-8" />
               </div>
               <div>
