@@ -56,7 +56,7 @@
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // IAS Strict Password Policy
-    const IAS_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    const IAS_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!\%*?&]{8,}$/;
 
     // Helper: Format 24-hour time string into AM/PM
     const formatScheduleTo12Hour = (scheduleStr) => {
@@ -1046,7 +1046,7 @@
             >
               <div className="relative max-w-lg w-full bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden p-3 shadow-2xl space-y-2" onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-between items-center px-1">
-                  <span className="text-xs font-bold text-white uppercase tracking-wider">Court Image Zoom</span>
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">League Banner Zoom</span>
                   <button 
                     onClick={() => setZoomedImage(null)} 
                     className="w-7 h-7 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold flex items-center justify-center text-xs transition-all"
@@ -1055,7 +1055,7 @@
                   </button>
                 </div>
                 <div className="w-full rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center max-h-[70vh]">
-                  <img src={zoomedImage} alt="Zoomed Court" className="w-full h-auto object-contain max-h-[70vh]" />
+                  <img src={zoomedImage} alt="Zoomed League" className="w-full h-auto object-contain max-h-[70vh]" />
                 </div>
               </div>
             </div>
@@ -1155,9 +1155,15 @@
                   const feeMatch = rawTitle.match(/\(Fee:\s*₱?(\d+)\)/i);
                   const cleanTitle = rawTitle.replace(/\s*\(Fee:\s*₱?\d+\)/i, '');
                   const feeVal = feeMatch ? feeMatch[1] : null;
+                  const ligaImg = activeModalLeague.academic_year && activeModalLeague.academic_year.startsWith('data:image') ? activeModalLeague.academic_year : null;
 
                   return (
-                    <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-1">
+                    <div className="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-2">
+                      {ligaImg && (
+                        <div className="w-full h-28 rounded-lg overflow-hidden border border-slate-800">
+                          <img src={ligaImg} alt="League Banner" className="w-full h-full object-cover" />
+                        </div>
+                      )}
                       <div className="flex justify-between items-start gap-2">
                         <p className="font-bold text-brand-400 leading-snug">{cleanTitle}</p>
                         {feeVal && (
@@ -1390,15 +1396,27 @@
               {openLeagues.length === 0 ? (
                 <p className="text-xs text-slate-500 py-6 text-center">No active leagues open for registration.</p>
               ) : (
-                <div className="space-y-2 overflow-y-auto flex-1 pr-1">
+                <div className="space-y-2.5 overflow-y-auto flex-1 pr-1">
                   {openLeagues.map((league) => {
                     const rawTitle = league.course_program.replace('🏆 LEAGUE: ', '');
                     const feeMatch = rawTitle.match(/\(Fee:\s*₱?(\d+)\)/i);
                     const cleanTitle = rawTitle.replace(/\s*\(Fee:\s*₱?\d+\)/i, '');
                     const feeVal = feeMatch ? feeMatch[1] : null;
+                    const ligaImg = league.academic_year && league.academic_year.startsWith('data:image') ? league.academic_year : null;
 
                     return (
-                      <div key={league.id} className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                      <div key={league.id} className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl space-y-2.5">
+                        {ligaImg && (
+                          <div 
+                            onClick={() => setZoomedImage(ligaImg)}
+                            className="w-full h-32 rounded-xl overflow-hidden border border-slate-800 cursor-zoom-in hover:opacity-90 transition-opacity relative shadow"
+                            title="Click to Zoom Banner"
+                          >
+                            <img src={ligaImg} alt={cleanTitle} className="w-full h-full object-cover" />
+                            <span className="absolute bottom-2 right-2 px-2 py-0.5 bg-slate-900/90 text-[9px] text-brand-400 font-mono rounded-md">Zoom Banner</span>
+                          </div>
+                        )}
+
                         <div className="flex justify-between items-start gap-2">
                           <div>
                             <p className="font-bold text-xs text-brand-400 leading-tight">{cleanTitle}</p>
@@ -1443,6 +1461,10 @@
       const [ligaFee, setLigaFee] = React.useState('500');
       const [reserveDate, setReserveDate] = React.useState(new Date().toISOString().split('T')[0]);
 
+      // League Image States
+      const [ligaFile, setLigaFile] = React.useState(null);
+      const [ligaImagePreview, setLigaImagePreview] = React.useState('');
+
       const [newCourtName, setNewCourtName] = React.useState('');
       const [courtLocation, setCourtLocation] = React.useState('Carlos tan St. Ormoc City');
       const [newCourtRate, setNewCourtRate] = React.useState('200');
@@ -1458,7 +1480,7 @@
 
       // Live Camera Modal State
       const [showCameraModal, setShowCameraModal] = React.useState(false);
-      const [isEditCamera, setIsEditCamera] = React.useState(false);
+      const [cameraTarget, setCameraTarget] = React.useState('court'); // 'court', 'liga', 'edit'
       const videoRef = React.useRef(null);
       const canvasRef = React.useRef(null);
       const [cameraStream, setCameraStream] = React.useState(null);
@@ -1529,7 +1551,7 @@
         setLoading(false);
       };
 
-      const handleFileChange = (e, isEdit = false) => {
+      const handleFileChange = (e, target = 'court') => {
         const file = e.target.files[0];
         if (file) {
           const reader = new FileReader();
@@ -1562,8 +1584,11 @@
               ctx.drawImage(img, 0, 0, width, height);
               const dataUrl = canvas.toDataURL('image/jpeg', 0.90);
               
-              if (isEdit) {
+              if (target === 'edit') {
                 setEditImagePreview(dataUrl);
+              } else if (target === 'liga') {
+                setLigaFile(file);
+                setLigaImagePreview(dataUrl);
               } else {
                 setCourtFile(file);
                 setCourtImagePreview(dataUrl);
@@ -1575,8 +1600,8 @@
         }
       };
 
-      const startCamera = (isEdit = false) => {
-        setIsEditCamera(isEdit);
+      const startCamera = (target = 'court') => {
+        setCameraTarget(target);
         setShowCameraModal(true);
         try {
           navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }).then(stream => {
@@ -1614,8 +1639,11 @@
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
-          if (isEditCamera) {
+          if (cameraTarget === 'edit') {
             setEditImagePreview(dataUrl);
+          } else if (cameraTarget === 'liga') {
+            setLigaImagePreview(dataUrl);
+            setLigaFile({ name: 'camera_capture.jpg' });
           } else {
             setCourtImagePreview(dataUrl);
             setCourtFile({ name: 'camera_capture.jpg' });
@@ -1653,7 +1681,7 @@
         const { error } = await supabase.from('enrollments').insert({
           student_id: currentUser.id,
           course_program: fullLigaName,
-          academic_year: "2026",
+          academic_year: ligaImagePreview || "2026",
           semester: `Date: ${reserveDate}`,
           status: 'Approved',
         }).select();
@@ -1665,6 +1693,8 @@
           setLigaTitle('');
           setCustomSport('');
           setLigaFee('500');
+          setLigaFile(null);
+          setLigaImagePreview('');
           safeAuditLog(currentUser, 'CREATE_LIGA_DIRECT', { liga: fullLigaName });
           fetchOrganizerData();
         }
@@ -1814,7 +1844,7 @@
               <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
                 <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <span>📷</span> Take Court Photo (HD)
+                    <span>📷</span> Take Photo (HD)
                   </h3>
                   <button onClick={stopCamera} className="text-slate-400 hover:text-white font-bold text-sm">✕</button>
                 </div>
@@ -1895,12 +1925,12 @@
                       <input
                         type="file"
                         accept="image/*"
-                        onChange={(e) => handleFileChange(e, true)}
+                        onChange={(e) => handleFileChange(e, 'edit')}
                         className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 outline-none file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-brand-500 file:text-slate-950 hover:file:bg-brand-400 cursor-pointer"
                       />
                       <button
                         type="button"
-                        onClick={() => startCamera(true)}
+                        onClick={() => startCamera('edit')}
                         className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-brand-400 border border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
                       >
                         <span>📷</span> Camera HD
@@ -1938,7 +1968,7 @@
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-xl">
                 <h3 className="text-sm font-bold text-white flex items-center justify-between border-b border-slate-800 pb-3">
-                  <span>⚡ Player League Registrations & Approvals</span>
+                  <span>League Registrations & Approvals</span>
                 </h3>
 
                 {loading ? (
@@ -1984,7 +2014,7 @@
 
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-xl">
                 <h3 className="text-sm font-bold text-white flex items-center justify-between border-b border-slate-800 pb-3">
-                  <span>📋 My Published Leagues & Proposed Courts</span>
+                  <span>Leagues & Proposed Courts</span>
                 </h3>
 
                 {loading ? (
@@ -2107,7 +2137,7 @@
                       type="number"
                       value={ligaFee}
                       onChange={(e) => setLigaFee(e.target.value)}
-                      placeholder="500"
+                      placeholder="100"
                       className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
                     />
                   </div>
@@ -2122,6 +2152,32 @@
                     />
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1.5">League Banner / Picture (HD)</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) => handleFileChange(e, 'liga')}
+                      className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 outline-none file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-brand-500 file:text-slate-950 hover:file:bg-brand-400 cursor-pointer"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => startCamera('liga')}
+                      className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-brand-400 border border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow"
+                    >
+                      <span>📷</span> HD Camera
+                    </button>
+                  </div>
+                </div>
+
+                {ligaImagePreview && (
+                  <div className="w-full h-40 rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden relative shadow-md">
+                    <img src={ligaImagePreview} alt="League Preview" className="w-full h-full object-cover" />
+                    <span className="absolute bottom-2 right-2 px-2.5 py-1 bg-slate-900/95 text-[10px] text-brand-400 font-mono rounded-lg">HD Preview</span>
+                  </div>
+                )}
 
                 <button
                   type="submit"
@@ -2158,7 +2214,7 @@
                       type="number"
                       value={newCourtRate}
                       onChange={(e) => setNewCourtRate(e.target.value)}
-                      placeholder="200"
+                      placeholder="100"
                       className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500"
                     />
                   </div>
@@ -2180,12 +2236,12 @@
                     <input
                       type="file"
                       accept="image/*,.pdf"
-                      onChange={(e) => handleFileChange(e, false)}
+                      onChange={(e) => handleFileChange(e, 'court')}
                       className="w-full px-3 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 outline-none file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-brand-500 file:text-slate-950 hover:file:bg-brand-400 cursor-pointer"
                     />
                     <button
                       type="button"
-                      onClick={() => startCamera(false)}
+                      onClick={() => startCamera('court')}
                       className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-brand-400 border border-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all shadow"
                     >
                       <span>📷</span> HD Camera
@@ -2253,6 +2309,7 @@
     // =========================================================================
     function AdminDashboard({ currentUser, showNotification, refreshCourts, activeSubTab, setActiveSubTab }) {
       const [pendingProposals, setPendingProposals] = React.useState([]);
+      const [totalAccountsCount, setTotalAccountsCount] = React.useState(0);
       const [logs, setLogs] = React.useState([]);
       const [loading, setLoading] = React.useState(true);
 
@@ -2268,6 +2325,12 @@
           .from('enrollments')
           .select('*')
           .order('submitted_at', { ascending: false });
+
+        const { count: profilesCount } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true });
+
+        setTotalAccountsCount(profilesCount || 0);
 
         if (error || !rawEnrollments) {
           setPendingProposals([]);
@@ -2326,29 +2389,120 @@
         }
       };
 
+      const pendingCount = pendingProposals.filter(p => p.status === 'submitted' || p.status === 'Pending').length;
+      const courtProposalsList = pendingProposals.filter(p => p.course_program.includes('🏟️ NEW COURT PROPOSAL'));
+      const leagueRegistrationsList = pendingProposals.filter(p => p.course_program.includes('🏆 LEAGUE') || !p.course_program.includes('🏟️ NEW COURT PROPOSAL'));
+
       return (
         <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6">
+          
+          {/* TOP METRIC CARDS */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Accounts</p>
+                <p className="text-2xl font-black text-white font-mono">{totalAccountsCount}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center text-lg">
+                👥
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pending Approvals</p>
+                <p className="text-2xl font-black text-amber-400 font-mono">{pendingCount}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center text-lg">
+                ⏳
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between shadow-lg">
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Court Proposals</p>
+                <p className="text-2xl font-black text-brand-400 font-mono">{courtProposalsList.length}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400 flex items-center justify-center text-lg">
+                🏟️
+              </div>
+            </div>
+          </div>
+
           {activeSubTab === 'approvals' && (
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
-              <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-3">
-                Admin Approvals Desk (Organizer Courts & Proposals)
+              <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-3 flex items-center justify-between">
+                <span>League & Registration</span>
+                <span className="px-2.5 py-1 bg-brand-500/10 border border-brand-500/20 text-brand-400 text-[10px] font-bold rounded-lg">
+                  {leagueRegistrationsList.length} Entries
+                </span>
               </h3>
 
               {loading ? (
-                <LoadingSpinner label="Fetching proposals..." />
-              ) : pendingProposals.length === 0 ? (
-                <p className="text-xs text-slate-500 py-8 text-center">No system records available.</p>
+                <LoadingSpinner label="Fetching registrations..." />
+              ) : leagueRegistrationsList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">No league registrations pending review.</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
-                  {pendingProposals.map((item) => {
-                    const isCourtProposal = item.course_program.includes('🏟️ NEW COURT PROPOSAL');
-                    const imgData = isCourtProposal && item.academic_year && item.academic_year.startsWith('data:image') ? item.academic_year : null;
+                  {leagueRegistrationsList.map((item) => (
+                    <div key={item.id} className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-3 shadow-inner">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-xs text-white">{item.profiles?.full_name || 'User'}</p>
+                          <p className="text-[10px] text-slate-500">{item.profiles?.email}</p>
+                        </div>
+                        <StatusBadge status={item.status} scheduleStr={item.semester} />
+                      </div>
+                      
+                      <p className="text-xs font-bold text-brand-400 leading-snug">{item.course_program}</p>
+                      <p className="text-[11px] text-slate-300 font-mono">📅 {formatScheduleTo12Hour(item.semester) || 'Date Unspecified'}</p>
+
+                      {(item.status === 'submitted' || item.status === 'Pending') && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <button
+                            onClick={() => handleAdminApprove(item.id, 'Approved')}
+                            className="py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold rounded-xl text-xs active:scale-95 shadow"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleAdminApprove(item.id, 'Declined')}
+                            className="py-2.5 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 font-bold rounded-xl text-xs active:scale-95 shadow"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeSubTab === 'court_approvals' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
+              <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-3 flex items-center justify-between">
+                <span>🏟️ Court Proposals Approvals Desk</span>
+                <span className="px-2.5 py-1 bg-brand-500/10 border border-brand-500/20 text-brand-400 text-[10px] font-bold rounded-lg">
+                  {courtProposalsList.length} Proposals
+                </span>
+              </h3>
+
+              {loading ? (
+                <LoadingSpinner label="Fetching court proposals..." />
+              ) : courtProposalsList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">No court proposals pending review.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
+                  {courtProposalsList.map((item) => {
+                    const imgData = item.academic_year && item.academic_year.startsWith('data:image') ? item.academic_year : null;
 
                     return (
                       <div key={item.id} className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-3 shadow-inner">
                         <div className="flex justify-between items-start">
                           <div>
-                            <p className="font-bold text-xs text-white">{item.profiles?.full_name || 'Organizer / User'}</p>
+                            <p className="font-bold text-xs text-white">{item.profiles?.full_name || 'Organizer'}</p>
                             <p className="text-[10px] text-slate-500">{item.profiles?.email}</p>
                           </div>
                           <StatusBadge status={item.status} scheduleStr={item.semester} />
@@ -2364,13 +2518,13 @@
 
                         <p className="text-[11px] text-slate-300 font-mono">📅 {formatScheduleTo12Hour(item.semester) || 'Date Unspecified'}</p>
 
-                        {isCourtProposal && (item.status === 'submitted' || item.status === 'Pending') && (
+                        {(item.status === 'submitted' || item.status === 'Pending') && (
                           <div className="grid grid-cols-2 gap-2 pt-1">
                             <button
                               onClick={() => handleAdminApprove(item.id, 'Approved')}
                               className="py-2.5 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold rounded-xl text-xs active:scale-95 shadow"
                             >
-                              Approve Proposal
+                              Approve Court
                             </button>
                             <button
                               onClick={() => handleAdminApprove(item.id, 'Declined')}
@@ -2646,8 +2800,9 @@
 
                   {isAdmin && (
                     <div className="flex lg:hidden items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-xs font-bold">
-                      <button onClick={() => setActiveNavTab('approvals')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'approvals' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>🏆 Approvals Desk</button>
-                      <button onClick={() => setActiveNavTab('logs')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'logs' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>🛡️ Audit Logs</button>
+                      <button onClick={() => setActiveNavTab('approvals')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'approvals' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>🏆 Leagues</button>
+                      <button onClick={() => setActiveNavTab('court_approvals')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'court_approvals' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>🏟️ Courts</button>
+                      <button onClick={() => setActiveNavTab('logs')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'logs' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>🛡️ Logs</button>
                     </div>
                   )}
 
@@ -2683,7 +2838,8 @@
                     <nav className="space-y-1">
                       {(isAdmin
                         ? [
-                            { id: 'approvals', label: 'Approvals Desk', icon: '🏆' },
+                            { id: 'approvals', label: 'Dashboard', icon: '🏆' },
+                            { id: 'court_approvals', label: 'Court Approvals', icon: '🏟️' },
                             { id: 'logs', label: 'Audit Logs', icon: '🛡️' },
                             { id: 'profile', label: 'Profile', icon: '👤' }
                           ]
@@ -2719,7 +2875,6 @@
 
                 {(isAdmin || isOrganizer) ? (
                   <div className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8">
-                    {/* Header banner title/description removed here */}
                     {activeNavTab === 'zone' ? (
                       <OrmocZoneSchedule />
                     ) : activeNavTab === 'profile' ? (
