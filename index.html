@@ -42,9 +42,9 @@
   <!-- Supabase JS Client v2 CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body class="h-full text-slate-100 antialiased font-sans bg-slate-950 selection:bg-brand-500 selection:text-slate-950 flex items-center justify-center p-0 sm:p-4">
+<body class="h-full text-slate-100 antialiased font-sans bg-slate-950 selection:bg-brand-500 selection:text-slate-950 flex flex-col overflow-hidden m-0 p-0">
 
-  <!-- Dynamic Container: Mobile frame for Users, Full Desktop web layout for Organizer/Admin -->
+  <!-- Dynamic Responsive Root Container -->
   <div id="root" class="w-full h-full flex flex-col overflow-hidden relative"></div>
 
   <script type="text/babel">
@@ -1798,21 +1798,22 @@
           updatedProgram = `🏟️ NEW COURT PROPOSAL: ${editName.trim()} (₱${editRate}/hr) - Basketball @ ${editLocation.trim()}`;
         }
 
+        // KEEP EXISTING STATUS SO IT DIRECTLY CHANGES WITHOUT NEEDING ADMIN APPROVAL AGAIN
         const { error } = await supabase
           .from('enrollments')
           .update({
             course_program: updatedProgram,
             academic_year: editImagePreview || editingItem.academic_year,
             semester: isCourt ? `Loc: ${editLocation.trim()} | Att: Updated` : editingItem.semester,
-            status: isCourt ? 'Pending' : editingItem.status
+            status: editingItem.status // Retains current status (e.g. Approved/Occupied stays Approved!)
           })
           .eq('id', editingItem.id);
 
         if (error) {
           showNotification(`Update failed: ${error.message}`, 'error');
         } else {
-          showNotification('Updated successfully!', 'success');
-          safeAuditLog(currentUser, 'UPDATE_ORGANIZER_ITEM', { item_id: editingItem.id });
+          showNotification('Updated successfully and applied immediately!', 'success');
+          safeAuditLog(currentUser, 'UPDATE_ORGANIZER_ITEM_DIRECT', { item_id: editingItem.id });
           setEditingItem(null);
           fetchOrganizerData();
           if (refreshCourts) refreshCourts();
@@ -1956,7 +1957,7 @@
                       type="submit"
                       className="py-3 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold rounded-xl text-xs shadow-md"
                     >
-                      Save Changes
+                      Save & Update Directly
                     </button>
                   </div>
                 </form>
@@ -2673,8 +2674,16 @@
       const [showLogoutModal, setShowLogoutModal] = React.useState(false);
       const [availableCourts, setAvailableCourts] = React.useState([]);
 
+      // Responsive screen detector (Desktop vs Mobile)
+      const [isDesktopView, setIsDesktopView] = React.useState(window.innerWidth >= 768);
+
       React.useEffect(() => {
+        const handleResize = () => {
+          setIsDesktopView(window.innerWidth >= 768);
+        };
+        window.addEventListener('resize', handleResize);
         fetchApprovedCustomCourts();
+        return () => window.removeEventListener('resize', handleResize);
       }, []);
 
       const fetchApprovedCustomCourts = async () => {
@@ -2734,15 +2743,13 @@
       const isOrganizer = currentUser?.role === 'Organizer' || currentUser?.role === 'dean';
       const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'admin';
 
-      // Mobile frame ONLY for logged-out and Player/User accounts. Full desktop web layout for Organizer & Admin.
-      const isMobileFrame = !currentUser || isPlayer;
+      // True responsive container styling: Full web layout for Desktop, mobile app view for mobile screens
+      const containerClasses = isDesktopView 
+        ? "w-full h-full flex flex-col justify-between overflow-hidden bg-slate-950" 
+        : "w-full h-full flex flex-col justify-between overflow-hidden bg-slate-950 max-w-md mx-auto shadow-2xl border border-slate-900 rounded-none sm:rounded-[40px]";
 
       return (
-        <div className={`w-full h-full flex flex-col justify-between overflow-hidden bg-slate-950 ${
-          isMobileFrame 
-            ? 'sm:max-w-md sm:h-[844px] sm:border sm:border-slate-800 sm:rounded-[40px] sm:shadow-2xl mx-auto my-auto' 
-            : 'w-full h-full'
-        }`}>
+        <div className={containerClasses}>
           
           <ConfirmModal
             isOpen={showLogoutModal}
@@ -2789,20 +2796,20 @@
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  {/* Navigation Tabs beside Logout */}
-                  {isOrganizer && (
-                    <div className="flex lg:hidden items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-xs font-bold">
-                      <button onClick={() => setActiveNavTab('approvals')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'approvals' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Approvals</button>
-                      <button onClick={() => setActiveNavTab('create_league')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'create_league' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Create League</button>
-                      <button onClick={() => setActiveNavTab('add_court')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'add_court' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Add Court</button>
+                  {/* Navigation Tabs beside Logout for Mobile */}
+                  {isOrganizer && !isDesktopView && (
+                    <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-[10px] font-bold">
+                      <button onClick={() => setActiveNavTab('approvals')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'approvals' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Approvals</button>
+                      <button onClick={() => setActiveNavTab('create_league')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'create_league' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Create League</button>
+                      <button onClick={() => setActiveNavTab('add_court')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'add_court' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Add Court</button>
                     </div>
                   )}
 
-                  {isAdmin && (
-                    <div className="flex lg:hidden items-center gap-1.5 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-xs font-bold">
-                      <button onClick={() => setActiveNavTab('approvals')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'approvals' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>🏆 Leagues</button>
-                      <button onClick={() => setActiveNavTab('court_approvals')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'court_approvals' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>🏟️ Courts</button>
-                      <button onClick={() => setActiveNavTab('logs')} className={`px-2.5 py-1 rounded-lg transition-all ${activeNavTab === 'logs' ? 'bg-brand-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>🛡️ Logs</button>
+                  {isAdmin && !isDesktopView && (
+                    <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-[10px] font-bold">
+                      <button onClick={() => setActiveNavTab('approvals')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'approvals' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Leagues</button>
+                      <button onClick={() => setActiveNavTab('court_approvals')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'court_approvals' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Courts</button>
+                      <button onClick={() => setActiveNavTab('logs')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'logs' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Logs</button>
                     </div>
                   )}
 
@@ -2820,8 +2827,8 @@
 
               {/* MAIN CONTENT AREA */}
               <main className={`flex-1 min-h-0 ${isAdmin || isOrganizer ? 'flex overflow-hidden' : 'flex flex-col overflow-y-auto p-2 sm:p-4'}`}>
-                {(isAdmin || isOrganizer) && (
-                  <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-slate-800 bg-slate-900/70 p-5">
+                {(isAdmin || isOrganizer) && isDesktopView && (
+                  <aside className="flex w-64 shrink-0 flex-col border-r border-slate-800 bg-slate-900/70 p-5">
                     <div className="mb-8 flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-brand-500/20 bg-brand-500/10">
                         <MapPinLogo className="h-8 w-8" />
@@ -2894,8 +2901,8 @@
                 )}
               </main>
 
-              {/* BOTTOM NAVIGATION BAR (Visible for Mobile Players only) */}
-              {isPlayer && (
+              {/* BOTTOM NAVIGATION BAR (Visible for Mobile Users only) */}
+              {isPlayer && !isDesktopView && (
                 <nav className="px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-around text-[10px] shrink-0">
                   <button
                     onClick={() => setActiveNavTab('home')}
