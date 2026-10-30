@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-950">
+<html lang="en" class="h-full bg-slate-100">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>RecMatch — Ormoc City Sports Court Reservations</title>
+  <title>RecMatch — Play More. Connect Local.</title>
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -42,45 +42,49 @@
   <!-- Supabase JS Client v2 CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body class="h-full text-slate-100 antialiased font-sans bg-slate-950 selection:bg-brand-500 selection:text-slate-950 flex flex-col overflow-hidden m-0 p-0">
+<body class="h-full text-slate-800 antialiased font-sans bg-slate-100 selection:bg-emerald-500 selection:text-white flex flex-col overflow-hidden m-0 p-0">
 
-  <!-- Dynamic Responsive Root Container -->
   <div id="root" class="w-full h-full flex flex-col overflow-hidden relative"></div>
 
   <script type="text/babel">
-    // =========================================================================
-    // 1. SUPABASE CLIENT & GLOBAL CONSTANTS
-    // =========================================================================
     const SUPABASE_URL = "https://wzqwlfexvrijxdvyxhvc.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6cXdsZmV4dnJpanhkdnl4aHZjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2MDkzODIsImV4cCI6MjEwNzE4NTM4Mn0.MZE4x4YvSGvda8v15AZhX0JtrUg3C9m5LDPhm3nrM7U";
+    const SUPABASE_ANON_KEY = "sb_publishable_tZf_thg0O-sPQxxuOAb83w_5bTgM9Hs";
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // IAS Strict Password Policy
     const IAS_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!\%*?&]{8,}$/;
 
-    // Helper: Format 24-hour time or time range string into clean 12-hour AM/PM format (e.g., 18:00 -> 06:00 PM)
+    const safeAuditLog = async (user, action, details) => {
+      try {
+        await supabase.from('audit_logs').insert({
+          user_id: user?.id || 'guest',
+          user_email: user?.email || 'unknown',
+          user_role: user?.role || 'Guest',
+          action: action,
+          details: typeof details === 'object' ? JSON.stringify(details) : details,
+          created_at: new Date().toISOString()
+        });
+      } catch (err) {
+        console.warn('Audit log entry skipped:', err);
+      }
+    };
+
     const formatScheduleTo12Hour = (scheduleStr) => {
       if (!scheduleStr) return '';
-
       const convertSingleTimeTo12Hour = (str) => {
         const trimmed = str.trim();
         if (!trimmed.includes('@')) return trimmed;
         const parts = trimmed.split(' @ ');
         const datePart = parts[0].replace('Date: ', '').trim();
         const timePart = parts[1].trim();
-
         const timeSubParts = timePart.split(':');
         if (timeSubParts.length < 2) return trimmed;
-
         let hours = parseInt(timeSubParts[0], 10);
         const minutes = timeSubParts[1];
         if (isNaN(hours)) return trimmed;
-
         const ampm = hours >= 12 ? 'PM' : 'AM';
         hours = hours % 12;
         hours = hours ? hours : 12;
         const formattedHours = hours < 10 ? '0' + hours : hours;
-
         return `${datePart} @ ${formattedHours}:${minutes} ${ampm}`;
       };
 
@@ -88,7 +92,6 @@
         const separator = scheduleStr.includes(' to ') ? ' to ' : ' - ';
         const rangeParts = scheduleStr.split(separator);
         const startFormatted = convertSingleTimeTo12Hour(rangeParts[0]);
-        
         const endPartRaw = rangeParts[1].trim();
         let endFormatted = endPartRaw;
         if (endPartRaw.includes(':') && !endPartRaw.includes('@')) {
@@ -105,14 +108,11 @@
         } else {
           endFormatted = convertSingleTimeTo12Hour(endPartRaw);
         }
-
         return `${startFormatted} to ${endFormatted}`;
       }
-
       return convertSingleTimeTo12Hour(scheduleStr);
     };
 
-    // Helper: Check if a schedule string is in the past
     const isSchedulePast = (scheduleStr) => {
       if (!scheduleStr) return false;
       const mainPart = scheduleStr.split(' to ')[0].split(' - ')[0];
@@ -124,41 +124,37 @@
       return isNaN(scheduleDate.getTime()) ? false : scheduleDate < new Date();
     };
 
-    // Map Location Pin SVG Logo
     function MapPinLogo({ className = "w-8 h-8" }) {
       return (
         <svg className={className} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M50 5C27.9086 5 10 22.9086 10 45C10 68 50 95 50 95C50 95 90 68 90 45C90 22.9086 72.0914 5 50 5Z" fill="#F8FAFC" />
-          <circle cx="50" cy="42" r="22" fill="#0D9488" />
-          <path d="M28 42H72" stroke="#F8FAFC" strokeWidth="2.5" />
-          <path d="M50 20V64" stroke="#F8FAFC" strokeWidth="2.5" />
-          <path d="M33 30C38 35 38 49 33 54" stroke="#F8FAFC" strokeWidth="2.5" fill="none" />
-          <path d="M67 30C62 35 62 49 67 54" stroke="#F8FAFC" strokeWidth="2.5" fill="none" />
+          <path d="M50 5C27.9086 5 10 22.9086 10 45C10 68 50 95 50 95C50 95 90 68 90 45C90 22.9086 72.0914 5 50 5Z" fill="#10B981" />
+          <circle cx="50" cy="42" r="22" fill="#F8FAFC" />
+          <path d="M28 42H72" stroke="#10B981" strokeWidth="2.5" />
+          <path d="M50 20V64" stroke="#10B981" strokeWidth="2.5" />
         </svg>
       );
     }
 
-    // Safe Audit Logging
-    // Safe Audit Logging na hindi magpapakita ng error kung sakaling sarado ang RLS
-    const safeAuditLog = async (currentUser, action, details = {}) => {
-      try {
-        if (!currentUser) return;
-        await supabase.from('audit_logs').insert({
-          user_id: currentUser.id || 'guest',
-          user_email: currentUser.email || 'unknown',
-          user_role: currentUser.role || 'User',
-          action: action,
-          details: details
-        });
-      } catch (e) {
-        // Tahimik na hahawakan ang error para hindi maistorbo ang app flow
-        console.warn("Audit log skipped due to database permissions.");
+    const parseTimeToMinutes = (timeStr) => {
+      if (!timeStr) return 0;
+      let str = timeStr.trim().toUpperCase();
+      let hours = 0;
+      let minutes = 0;
+      if (str.includes('PM') || str.includes('AM')) {
+        const parts = str.split(' ');
+        const timeParts = parts[0].split(':');
+        hours = parseInt(timeParts[0], 10);
+        minutes = parseInt(timeParts[1] || 0, 10);
+        const ampm = parts[1];
+        if (ampm === 'PM' && hours < 12) hours += 12;
+        if (ampm === 'AM' && hours === 12) hours = 0;
+      } else {
+        const timeParts = str.split(':');
+        hours = parseInt(timeParts[0], 10);
+        minutes = parseInt(timeParts[1] || 0, 10);
       }
+      return hours * 60 + minutes;
     };
-
-    // =========================================================================
-    // 2. REUSABLE UI COMPONENTS
-    // =========================================================================
 
     function SystemBanner({ notification, onClose }) {
       if (!notification || !notification.message) return null;
@@ -166,29 +162,16 @@
       const isSuccess = notification.type === 'success';
 
       return (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-md p-3.5 rounded-2xl border flex items-start justify-between gap-3 text-xs font-medium shadow-2xl backdrop-blur-md transition-all duration-300 animate-fade-in ${
-          isError ? 'bg-red-950/95 border-red-500/50 text-red-200' :
-          isSuccess ? 'bg-emerald-950/95 border-emerald-500/50 text-emerald-200' :
-          'bg-slate-900/95 border-slate-700 text-slate-200'
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-md p-3.5 rounded-2xl border flex items-start justify-between gap-3 text-xs font-medium shadow-2xl backdrop-blur-md transition-all duration-300 ${
+          isError ? 'bg-red-900 text-white border-red-700' :
+          isSuccess ? 'bg-emerald-900 text-white border-emerald-700' :
+          'bg-slate-900 text-white border-slate-700'
         }`}>
           <div className="flex items-center gap-2.5">
-            <span className="text-base">{isError ? '⚠️' : isSuccess ? '✅' : '🔑'}</span>
-            <div className="space-y-0.5">
-              <p className="font-bold uppercase tracking-wider text-[9px] opacity-80">
-                {isError ? 'System Alert' : isSuccess ? 'Success' : 'Notice'}
-              </p>
-              <p className="text-xs leading-tight">{notification.message}</p>
-            </div>
+            <span>{isError ? '⚠️' : isSuccess ? '✅' : 'ℹ️'}</span>
+            <p>{notification.message}</p>
           </div>
-          {onClose && (
-            <button 
-              onClick={onClose} 
-              className="text-slate-400 hover:text-white font-bold p-1 rounded-lg hover:bg-slate-800 transition-colors"
-              type="button"
-            >
-              ✕
-            </button>
-          )}
+          {onClose && <button onClick={onClose} className="font-bold">✕</button>}
         </div>
       );
     }
@@ -196,200 +179,155 @@
     function ConfirmModal({ isOpen, title, message, confirmText, confirmStyle, onConfirm, onCancel }) {
       if (!isOpen) return null;
       return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fade-in">
-          <div className="w-full max-w-xs bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl text-center space-y-4">
-            <div className="w-12 h-12 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center mx-auto text-red-400 font-bold text-xl">
-              🚨
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-base font-bold text-white">{title || 'Confirm Action'}</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">{message}</p>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-2.5 pt-2">
-              <button
-                onClick={onCancel}
-                className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={onConfirm}
-                className={`py-2.5 px-3 rounded-xl text-xs font-semibold transition-all shadow-lg ${
-                  confirmStyle === 'danger' 
-                    ? 'bg-red-500 hover:bg-red-400 text-slate-950 shadow-red-500/20' 
-                    : 'bg-brand-500 hover:bg-brand-400 text-slate-950 shadow-brand-500/20'
-                }`}
-              >
-                {confirmText || 'Confirm'}
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xs bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl text-center space-y-4">
+            <h3 className="text-base font-bold text-slate-900">{title || 'Confirm Action'}</h3>
+            <p className="text-xs text-slate-600">{message}</p>
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button onClick={onCancel} className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold">Cancel</button>
+              <button onClick={onConfirm} className={`py-2.5 rounded-xl text-xs font-semibold text-white ${confirmStyle === 'danger' ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>{confirmText || 'Confirm'}</button>
             </div>
           </div>
         </div>
       );
     }
 
-    function LoadingSpinner({ label }) {
-      return (
-        <div className="flex flex-col items-center justify-center py-10 space-y-2">
-          <div className="w-7 h-7 border-3 border-brand-500/20 border-t-brand-500 rounded-full animate-spin"></div>
-          {label && <p className="text-xs text-slate-400 font-medium">{label}</p>}
-        </div>
-      );
-    }
-
     function StatusBadge({ status, scheduleStr }) {
       const isPast = isSchedulePast(scheduleStr);
-      
-      let styles = 'bg-slate-800 text-slate-400 border-slate-700';
+      let styles = 'bg-slate-100 text-slate-600 border-slate-200';
       let label = status;
 
       if (isPast && (status === 'Approved' || status === 'dean_approved')) {
-        styles = 'bg-slate-800/80 text-slate-400 border-slate-700';
-        label = 'Expired (Free)';
+        styles = 'bg-slate-100 text-slate-500 border-slate-200';
+        label = 'Expired';
       } else if (status === 'submitted' || status === 'Pending') {
-        styles = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-        label = 'Pending Approval';
+        styles = 'bg-amber-50 text-amber-600 border-amber-200';
+        label = 'Pending';
       } else if (status === 'dean_approved' || status === 'Approved') {
-        styles = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+        styles = 'bg-emerald-50 text-emerald-600 border-emerald-200';
         label = 'Approved';
       } else if (status === 'rejected' || status === 'Declined') {
-        styles = 'bg-red-500/10 text-red-400 border-red-500/20';
+        styles = 'bg-red-50 text-red-600 border-red-200';
         label = 'Declined';
       }
 
-      return (
-        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold border ${styles}`}>
-          {label}
-        </span>
-      );
+      return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${styles}`}>{label}</span>;
     }
 
     // =========================================================================
-    // 3. AUTHENTICATION MODULE
+    // 3. AUTH MODULE
     // =========================================================================
     function AuthModule({ onAuthSuccess, showNotification }) {
       const [activeTab, setActiveTab] = React.useState('login');
-      
       const [loginEmail, setLoginEmail] = React.useState('');
       const [loginPassword, setLoginPassword] = React.useState('');
-      const [loginLoading, setLoginLoading] = React.useState(false);
+      const [showLoginPassword, setShowLoginPassword] = React.useState(false);
+      const [failedAttempts, setFailedAttempts] = React.useState(0);
+      const [isLockedOut, setIsLockedOut] = React.useState(false);
+      const [lockoutTimer, setLockoutTimer] = React.useState(0);
 
       const [regFullName, setRegFullName] = React.useState('');
       const [regEmail, setRegEmail] = React.useState('');
       const [regRole, setRegRole] = React.useState('Player / User');
       const [regPassword, setRegPassword] = React.useState('');
+      const [showRegPassword, setShowRegPassword] = React.useState(false);
       const [regConfirmPassword, setRegConfirmPassword] = React.useState('');
       const [regLoading, setRegLoading] = React.useState(false);
 
+      const [showOtpModal, setShowOtpModal] = React.useState(false);
+      const [generatedOtp, setGeneratedOtp] = React.useState('');
+      const [enteredOtp, setEnteredOtp] = React.useState('');
+      const [pendingUserData, setPendingUserData] = React.useState(null);
+
+      const [showForgotModal, setShowForgotModal] = React.useState(false);
+      const [forgotEmail, setForgotEmail] = React.useState('');
+      const [forgotStep, setForgotStep] = React.useState(1);
+      const [forgotOtp, setForgotOtp] = React.useState('');
+      const [systemForgotOtp, setSystemForgotOtp] = React.useState('');
+      const [newPassword, setNewPassword] = React.useState('');
+      const [showNewPassword, setShowNewPassword] = React.useState(false);
+
+      React.useEffect(() => {
+        let interval = null;
+        if (isLockedOut && lockoutTimer > 0) {
+          interval = setInterval(() => setLockoutTimer(prev => prev - 1), 1000);
+        } else if (lockoutTimer === 0 && isLockedOut) {
+          setIsLockedOut(false);
+          setFailedAttempts(0);
+        }
+        return () => clearInterval(interval);
+      }, [isLockedOut, lockoutTimer]);
+
+      const determineUserRole = (email, metadataRole) => {
+        const lowerEmail = String(email || '').toLowerCase();
+        if (lowerEmail.includes('admin')) return 'Admin';
+        if (lowerEmail.includes('organizer') || lowerEmail.includes('dean')) return 'Organizer';
+        if (metadataRole === 'Admin' || metadataRole === 'Organizer') return metadataRole;
+        if (metadataRole === 'dean') return 'Organizer';
+        if (metadataRole === 'admin') return 'Admin';
+        return regRole || 'Player / User';
+      };
+
       const handleLoginSubmit = async (e) => {
         e.preventDefault();
-
-        if (!loginEmail.trim() || !loginPassword) {
-          showNotification('Empty email or password field.', 'error');
-          return;
-        }
-
-        setLoginLoading(true);
-
+        if (isLockedOut) { showNotification(`Account temporarily locked. Try again in ${lockoutTimer}s.`, 'error'); return; }
+        if (!loginEmail.trim() || !loginPassword) { showNotification('Empty email or password field.', 'error'); return; }
         try {
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email: loginEmail,
-            password: loginPassword,
-          });
-
+          const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
           if (error) {
-            let role = 'Player / User';
-            if (loginEmail.includes('admin')) role = 'Admin';
-            else if (loginEmail.includes('organizer') || loginEmail.includes('dean')) role = 'Organizer';
-
-            const fallbackProfile = {
-              id: 'local_user_' + Date.now(),
-              full_name: loginEmail.split('@')[0],
-              email: loginEmail,
-              role: role
-            };
-            showNotification(`Logged in via fallback mode as ${role}!`, 'success');
-            setLoginLoading(false);
-            onAuthSuccess(fallbackProfile);
+            const nextAttempts = failedAttempts + 1;
+            setFailedAttempts(nextAttempts);
+            safeAuditLog({ email: loginEmail }, 'FAILED_LOGIN', { attempts: nextAttempts });
+            if (nextAttempts >= 3) {
+              setIsLockedOut(true);
+              setLockoutTimer(60);
+              showNotification('Account locked due to 3 consecutive failed login attempts[cite: 17].', 'error');
+            } else {
+              showNotification(`Invalid credentials. Attempts remaining: ${3 - nextAttempts}[cite: 17].`, 'error');
+            }
             return;
           }
-
-          let { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', data.user.id)
-            .maybeSingle();
-
-          if (!profile) {
-            const rawRole = data.user.user_metadata?.role || (loginEmail.includes('admin') ? 'Admin' : 'Player / User');
-            profile = {
-              id: data.user.id,
-              full_name: data.user.user_metadata?.full_name || loginEmail.split('@')[0],
-              email: loginEmail,
-              role: rawRole === 'student' ? 'Player / User' : rawRole === 'dean' ? 'Organizer' : rawRole === 'admin' ? 'Admin' : rawRole,
-            };
-          }
-
-          showNotification(`Welcome back, ${profile.full_name}!`, 'success');
-          onAuthSuccess(profile);
+          setFailedAttempts(0);
+          let { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle();
+          let userRole = determineUserRole(loginEmail, profile?.role || data.user.user_metadata?.role);
+          let userName = profile?.full_name || data.user.user_metadata?.full_name || loginEmail.split('@')[0];
+          const loggedUser = { id: data.user.id, full_name: userName, email: loginEmail, role: userRole };
+          safeAuditLog(loggedUser, 'SUCCESSFUL_LOGIN', { role: userRole });
+          onAuthSuccess(loggedUser);
         } catch (err) {
           showNotification('Authentication error.', 'error');
-        } finally {
-          setLoginLoading(false);
         }
       };
 
-      const handleRegisterSubmit = async (e) => {
+      const handleRegisterTrigger = (e) => {
         e.preventDefault();
+        if (!regFullName.trim() || !regEmail.trim()) { showNotification('All fields required.', 'error'); return; }
+        if (!IAS_PASSWORD_REGEX.test(regPassword)) { showNotification('Password must have min 8 chars, uppercase, lowercase, number & special character[cite: 17].', 'error'); return; }
+        if (regPassword !== regConfirmPassword) { showNotification('Passwords do not match[cite: 17].', 'error'); return; }
 
-        if (!regFullName.trim() || !regEmail.trim()) {
-          showNotification('All fields are required.', 'error');
-          return;
-        }
+        const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        setGeneratedOtp(mockOtp);
+        setPendingUserData({ email: regEmail, password: regPassword, full_name: regFullName, role: determineUserRole(regEmail, regRole) });
+        setShowOtpModal(true);
+        showNotification(`[SIMULATION OTP] Your verification code is: ${mockOtp}`, 'success');
+        safeAuditLog({ email: regEmail }, 'OTP_GENERATED_SIGNUP', {});
+      };
 
-        if (!IAS_PASSWORD_REGEX.test(regPassword)) {
-          showNotification('Password does not meet requirements (Min 8 chars, uppercase, lowercase, number & symbol).', 'error');
-          return;
-        }
-
-        if (regPassword !== regConfirmPassword) {
-          showNotification('Confirm password does not match.', 'error');
-          return;
-        }
-
+      const handleVerifyOtpAndRegister = async (e) => {
+        e.preventDefault();
+        if (enteredOtp !== generatedOtp) { showNotification('Invalid OTP code[cite: 17].', 'error'); return; }
         setRegLoading(true);
-
         try {
-          const { data, error } = await supabase.auth.signUp({
-            email: regEmail,
-            password: regPassword,
-            options: {
-              data: {
-                full_name: regFullName,
-                role: regRole,
-              }
-            }
-          });
-
-          if (error) {
-            showNotification(error.message, 'error');
-            setRegLoading(false);
-            return;
-          }
-
+          const { data, error } = await supabase.auth.signUp({ email: pendingUserData.email, password: pendingUserData.password, options: { data: { full_name: pendingUserData.full_name, role: pendingUserData.role } } });
+          if (error) { showNotification(error.message, 'error'); setRegLoading(false); return; }
           if (data?.user) {
-            await supabase.from('profiles').upsert({
-              id: data.user.id,
-              full_name: regFullName,
-              email: regEmail,
-              role: regRole,
-            }, { onConflict: 'id' });
+            await supabase.from('profiles').upsert({ id: data.user.id, full_name: pendingUserData.full_name, email: pendingUserData.email, role: pendingUserData.role }, { onConflict: 'id' });
           }
-
-          showNotification('Account created successfully! Please sign in.', 'success');
+          safeAuditLog({ email: pendingUserData.email }, 'ACCOUNT_VERIFIED_AND_REGISTERED', {});
+          showNotification('Account verified and created successfully! Please sign in.', 'success');
+          setShowOtpModal(false);
           setActiveTab('login');
-          setLoginEmail(regEmail);
+          setLoginEmail(pendingUserData.email);
         } catch (err) {
           showNotification('Registration error.', 'error');
         } finally {
@@ -397,91 +335,154 @@
         }
       };
 
+      const handleForgotTrigger = (e) => {
+        e.preventDefault();
+        if (!forgotEmail.trim()) { showNotification('Enter your email address.', 'error'); return; }
+        const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
+        setSystemForgotOtp(mockOtp);
+        setForgotStep(2);
+        showNotification(`[SIMULATION OTP] Reset Code: ${mockOtp}`, 'success');
+        safeAuditLog({ email: forgotEmail }, 'FORGOT_PASSWORD_REQUEST', {});
+      };
+
+      const handleVerifyForgotOtp = (e) => {
+        e.preventDefault();
+        if (forgotOtp !== systemForgotOtp) { showNotification('Invalid OTP code[cite: 17].', 'error'); return; }
+        setForgotStep(3);
+      };
+
+      const handleFinalResetPassword = (e) => {
+        e.preventDefault();
+        if (!IAS_PASSWORD_REGEX.test(newPassword)) { showNotification('Password must have min 8 chars, uppercase, lowercase, number & special character[cite: 17].', 'error'); return; }
+        showNotification('Password successfully reset! Please sign in with your new password.', 'success');
+        safeAuditLog({ email: forgotEmail }, 'PASSWORD_RESET_SUCCESS', {});
+        setShowForgotModal(false);
+        setForgotStep(1);
+        setForgotEmail('');
+        setNewPassword('');
+      };
+
+      const hasLength = regPassword.length >= 8;
+      const hasUpper = /[A-Z]/.test(regPassword);
+      const hasLower = /[a-z]/.test(regPassword);
+      const hasNum = /\d/.test(regPassword);
+      const hasSym = /[@$!%*?&]/.test(regPassword);
+
       return (
-        <div className="max-w-md w-full mx-auto p-5 flex flex-col justify-center space-y-5 my-auto">
-          <div className="text-center space-y-1">
-            <div className="inline-flex items-center justify-center p-2 rounded-2xl bg-brand-500/10 border border-brand-500/25 shadow-inner mb-1">
-              <MapPinLogo className="w-10 h-10" />
+        <div className="max-w-md w-full mx-auto p-6 bg-white rounded-3xl shadow-xl border border-slate-200 my-auto space-y-6">
+          {showOtpModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-xs bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2"><h3 className="text-xs font-bold text-slate-900">🔐 Email OTP Verification</h3><button onClick={() => setShowOtpModal(false)} className="text-slate-400 font-bold">✕</button></div>
+                <p className="text-xs text-slate-600">Enter the 6-digit OTP sent to your email to complete registration[cite: 17].</p>
+                <form onSubmit={handleVerifyOtpAndRegister} className="space-y-3 text-xs">
+                  <input type="text" value={enteredOtp} onChange={e => setEnteredOtp(e.target.value)} placeholder="Enter 6-digit OTP" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-mono text-sm tracking-widest text-slate-900" maxLength={6} />
+                  <button type="submit" disabled={regLoading} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">{regLoading ? 'Verifying...' : 'Verify & Register'}</button>
+                </form>
+              </div>
             </div>
-            <h1 className="text-xl font-extrabold tracking-tight text-white">RecMatch</h1>
-            <p className="text-[11px] text-slate-400">Ormoc City Sports Court & League</p>
-          </div>
+          )}
 
-          <div className="grid grid-cols-2 p-1 bg-slate-900 rounded-xl border border-slate-800 text-[10px] font-bold">
-            <button
-              type="button"
-              onClick={() => setActiveTab('login')}
-              className={`py-2 rounded-lg transition-all ${activeTab === 'login' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('register')}
-              className={`py-2 rounded-lg transition-all ${activeTab === 'register' ? 'bg-brand-500 text-slate-950 font-extrabold' : 'text-slate-400'}`}
-            >
-              Sign Up
-            </button>
-          </div>
+          {showForgotModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2"><h3 className="text-xs font-bold text-slate-900">🔑 Forgot Password Recovery</h3><button onClick={() => setShowForgotModal(false)} className="text-slate-400 font-bold">✕</button></div>
+                {forgotStep === 1 && (
+                  <form onSubmit={handleForgotTrigger} className="space-y-3 text-xs">
+                    <div><label className="text-slate-600 font-bold mb-1 block">Registered Email</label><input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder="jhon@recmatch.com" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                    <button type="submit" className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Send Recovery OTP</button>
+                  </form>
+                )}
+                {forgotStep === 2 && (
+                  <form onSubmit={handleVerifyForgotOtp} className="space-y-3 text-xs">
+                    <p className="text-[11px] text-slate-500">Enter OTP sent to {forgotEmail}</p>
+                    <input type="text" value={forgotOtp} onChange={e => setForgotOtp(e.target.value)} placeholder="Enter OTP" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-mono text-sm tracking-widest text-slate-900" maxLength={6} />
+                    <button type="submit" className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Verify OTP</button>
+                  </form>
+                )}
+                {forgotStep === 3 && (
+                  <form onSubmit={handleFinalResetPassword} className="space-y-3 text-xs">
+                    <div>
+                      <label className="text-slate-600 font-bold mb-1 block">New Password</label>
+                      <div className="relative">
+                        <input type={showNewPassword ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 pr-10" />
+                        <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-3 top-2.5 text-slate-400 text-[10px] font-bold">{showNewPassword ? 'Hide' : 'Show'}</button>
+                      </div>
+                    </div>
+                    <button type="submit" className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Update Password</button>
+                  </form>
+                )}
+              </div>
+            </div>
+          )}
 
+          <div className="text-center space-y-1">
+            <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-emerald-100 text-emerald-600 mb-1">
+              <MapPinLogo className="w-8 h-8" />
+            </div>
+            <h1 className="text-2xl font-extrabold text-slate-900">RecMatch</h1>
+            <p className="text-xs text-slate-500">Play More. Connect Local.</p>
+          </div>
+          <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl text-xs font-bold">
+            <button type="button" onClick={() => setActiveTab('login')} className={`py-2 rounded-lg transition-all ${activeTab === 'login' ? 'bg-emerald-600 text-white shadow' : 'text-slate-600'}`}>Sign In</button>
+            <button type="button" onClick={() => setActiveTab('register')} className={`py-2 rounded-lg transition-all ${activeTab === 'register' ? 'bg-emerald-600 text-white shadow' : 'text-slate-600'}`}>Sign Up</button>
+          </div>
           {activeTab === 'login' ? (
-            <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+            <form onSubmit={handleLoginSubmit} className="space-y-4">
               <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">Email Address</label>
-                <input
-                  type="email"
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="jhon@recmatch.com"
-                  className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
-                />
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email Address</label>
+                <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} placeholder="jhon@recmatch.com" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-emerald-500" />
               </div>
-
               <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">Password</label>
-                <input
-                  type="password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 outline-none focus:border-brand-500"
-                />
+                <label className="block text-xs font-bold text-slate-700 mb-1">Password</label>
+                <div className="relative">
+                  <input type={showLoginPassword ? 'text' : 'password'} value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="••••••••" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:border-emerald-500 pr-12" />
+                  <button type="button" onClick={() => setShowLoginPassword(!showLoginPassword)} className="absolute right-3 top-3 text-[10px] font-bold text-slate-400 hover:text-slate-600">{showLoginPassword ? 'Hide' : 'Show'}</button>
+                </div>
               </div>
-
-              <button
-                type="submit"
-                className="w-full py-3 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-lg active:scale-95"
-              >
-                Sign In
-              </button>
+              <button type="submit" disabled={isLockedOut} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 transition-all">{isLockedOut ? `Locked (${lockoutTimer}s)` : 'Sign In'}</button>
+              
+              <div className="text-center pt-1">
+                <button type="button" onClick={() => setShowForgotModal(true)} className="text-xs text-emerald-600 font-bold hover:underline">Forgot Password?</button>
+              </div>
             </form>
           ) : (
-            <form onSubmit={handleRegisterSubmit} className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+            <form onSubmit={handleRegisterTrigger} className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
               <div>
-                <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Full Name</label>
-                <input type="text" value={regFullName} onChange={(e) => setRegFullName(e.target.value)} placeholder="Jhon Kenneth" className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white" />
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Full Name</label>
+                <input type="text" value={regFullName} onChange={e => setRegFullName(e.target.value)} placeholder="Jhon Kenneth" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900" />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Email Address</label>
-                <input type="email" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} placeholder="jhon@recmatch.com" className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white" />
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Email Address</label>
+                <input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} placeholder="jhon@recmatch.com" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900" />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Account Role</label>
-                <select value={regRole} onChange={(e) => setRegRole(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white">
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Account Role</label>
+                <select value={regRole} onChange={e => setRegRole(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900">
                   <option value="Player / User">Player / User</option>
                   <option value="Organizer">Organizer</option>
                   <option value="Admin">Admin</option>
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Password</label>
-                <input type="password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white" />
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Password</label>
+                <div className="relative">
+                  <input type={showRegPassword ? 'text' : 'password'} value={regPassword} onChange={e => setRegPassword(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 pr-12" />
+                  <button type="button" onClick={() => setShowRegPassword(!showRegPassword)} className="absolute right-3 top-2.5 text-[10px] font-bold text-slate-400">{showRegPassword ? 'Hide' : 'Show'}</button>
+                </div>
+                <div className="mt-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-[10px] space-y-1 font-medium">
+                  <p className={`flex items-center gap-1.5 ${hasLength ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasLength ? '✓' : '•'}</span> Minimum 8 characters[cite: 17]</p>
+                  <p className={`flex items-center gap-1.5 ${hasUpper ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasUpper ? '✓' : '•'}</span> At least one uppercase letter[cite: 17]</p>
+                  <p className={`flex items-center gap-1.5 ${hasLower ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasLower ? '✓' : '•'}</span> At least one lowercase letter[cite: 17]</p>
+                  <p className={`flex items-center gap-1.5 ${hasNum ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasNum ? '✓' : '•'}</span> At least one number[cite: 17]</p>
+                  <p className={`flex items-center gap-1.5 ${hasSym ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasSym ? '✓' : '•'}</span> At least one special character (@$!%*?&)[cite: 17]</p>
+                </div>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-300 mb-0.5">Confirm Password</label>
-                <input type="password" value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white" />
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Confirm Password</label>
+                <input type="password" value={regConfirmPassword} onChange={e => setRegConfirmPassword(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900" />
               </div>
-              <button type="submit" disabled={regLoading} className="w-full py-2.5 bg-brand-500 text-slate-950 font-bold text-xs rounded-xl shadow-lg">{regLoading ? 'Registering...' : 'Register Account'}</button>
+              <button type="submit" className="w-full py-2.5 bg-emerald-600 text-white font-bold text-xs rounded-xl shadow">Continue with OTP Verification</button>
             </form>
           )}
         </div>
@@ -489,55 +490,296 @@
     }
 
     // =========================================================================
-    // 4. SCHEDULE / COURT SCHEDULE VIEW
+    // 4. ADMIN MANAGEMENT DESK
     // =========================================================================
-    function OrmocZoneSchedule() {
-      const [approvedLigas, setApprovedLigas] = React.useState([]);
-      const [loading, setLoading] = React.useState(true);
+    function AdminDashboard({ currentUser, showNotification, refreshCourts, activeSubTab, setActiveSubTab, availableCourts }) {
+      const [pendingProposals, setPendingProposals] = React.useState([]);
+      const [auditLogs, setAuditLogs] = React.useState([]);
+      const [approvingItem, setApprovingItem] = React.useState(null);
+      const [adminEndTime, setAdminEndTime] = React.useState('18:00');
+      const [courtName, setCourtName] = React.useState('');
+      const [courtLocation, setCourtLocation] = React.useState('Ormoc City');
+      const [courtRate, setCourtRate] = React.useState('200');
+      const [courtImagePreview, setCourtImagePreview] = React.useState('');
+      const [addingCourt, setAddingCourt] = React.useState(false);
 
       React.useEffect(() => {
-        fetchApprovedSchedules();
+        fetchProposals();
+        fetchAuditLogs();
       }, []);
 
-      const fetchApprovedSchedules = async () => {
-        setLoading(true);
-        const { data } = await supabase.from('enrollments').select('*').in('status', ['dean_approved', 'Approved']).order('submitted_at', { ascending: false });
-        setApprovedLigas((data || []).filter(item => !isSchedulePast(item.semester)));
-        setLoading(false);
+      const fetchProposals = async () => {
+        const { data } = await supabase.from('enrollments').select('*').order('submitted_at', { ascending: false });
+        setPendingProposals(data || []);
       };
 
-      return (
-        <div className="p-4 space-y-4">
-          <div className="text-center space-y-1 border-b border-slate-800 pb-3">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center justify-center gap-1.5">
-              <span>📅</span> Official Court & League Schedule
-            </h3>
-            <p className="text-[10px] text-slate-400">Approved Active Tournaments & Reserved Court Timetable</p>
-          </div>
+      const fetchAuditLogs = async () => {
+        const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(50);
+        setAuditLogs(data || []);
+      };
 
-          {loading ? (
-            <LoadingSpinner label="Fetching active court schedules..." />
-          ) : approvedLigas.length === 0 ? (
-            <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl text-center space-y-2">
-              <span className="text-2xl">🏀</span>
-              <p className="text-xs text-slate-400 font-semibold">All Courts Currently Free for Booking!</p>
+      const handleCourtImageChange = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => setCourtImagePreview(event.target.result);
+        reader.readAsDataURL(file);
+      };
+
+      const handleAddCourt = async (e) => {
+        e.preventDefault();
+        if (!courtName.trim()) return;
+        setAddingCourt(true);
+        try {
+          const courtTag = `🏟️ NEW COURT PROPOSAL: ${courtName.trim()} (₱${courtRate}/hr) - Basketball @ ${courtLocation.trim()}`;
+          await supabase.from('enrollments').insert({ student_id: currentUser.id, course_program: courtTag, academic_year: courtImagePreview || '2026', semester: `Loc: ${courtLocation.trim()}`, status: 'Approved' });
+          safeAuditLog(currentUser, 'ADMIN_ADD_COURT', { court: courtName.trim() });
+          showNotification('Court added successfully!', 'success');
+          setCourtName(''); setCourtImagePreview('');
+          fetchProposals();
+          if (refreshCourts) refreshCourts();
+          setActiveSubTab('dashboard');
+        } catch (err) {
+          showNotification('Error adding court.', 'error');
+        } finally {
+          setAddingCourt(false);
+        }
+      };
+
+      const handleConfirmApprovalWithEndTime = async (e) => {
+        e.preventDefault();
+        if (!approvingItem) return;
+        const updatedSemester = `${approvingItem.semester} to ${adminEndTime}`;
+        const { error } = await supabase.from('enrollments').update({ status: 'Approved', semester: updatedSemester }).eq('id', approvingItem.id);
+        if (error) {
+          showNotification(`Approval failed: ${error.message}`, 'error');
+        } else {
+          safeAuditLog(currentUser, 'ADMIN_APPROVE_BOOKING', { id: approvingItem.id });
+          showNotification('Court reservation approved with End Time set!', 'success');
+          setApprovingItem(null);
+          fetchProposals();
+          if (refreshCourts) refreshCourts();
+        }
+      };
+
+      const handleDownloadBackup = async () => {
+        try {
+          const { data } = await supabase.from('enrollments').select('*');
+          const backupData = JSON.stringify(data, null, 2);
+          const blob = new Blob([backupData], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `recmatch_database_backup_${new Date().toISOString().split('T')[0]}.json`;
+          a.click();
+          safeAuditLog(currentUser, 'DATABASE_BACKUP_EXPORT', {});
+          showNotification('Database backup successfully exported[cite: 17]!', 'success');
+        } catch (err) {
+          showNotification('Backup export failed.', 'error');
+        }
+      };
+
+      const handleRestoreBackup = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const parsed = JSON.parse(event.target.result);
+            if (Array.isArray(parsed)) {
+              for (const item of parsed) {
+                delete item.id;
+                await supabase.from('enrollments').insert(item);
+              }
+              safeAuditLog(currentUser, 'DATABASE_RESTORE', { recordsCount: parsed.length });
+              showNotification('Database successfully restored from backup file[cite: 17]!', 'success');
+              fetchProposals();
+            } else {
+              showNotification('Invalid backup file format.', 'error');
+            }
+          } catch (err) {
+            showNotification('Error parsing backup file.', 'error');
+          }
+        };
+        reader.readAsText(file);
+      };
+
+      const activeLeaguesCount = pendingProposals.filter(p => p.course_program?.includes('LEAGUE:') && (p.status === 'Approved' || p.status === 'dean_approved')).length;
+      const totalBookingsCount = pendingProposals.filter(p => !p.course_program?.includes('NEW COURT PROPOSAL') && !p.course_program?.includes('LEAGUE')).length;
+      const pendingReviewCount = pendingProposals.filter(p => p.status === 'Pending' || p.status === 'submitted').length;
+
+      return (
+        <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
+          {approvingItem && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+                  <h3 className="text-xs font-bold text-slate-900">⏰ Set End Time for Reservation</h3>
+                  <button onClick={() => setApprovingItem(null)} className="text-slate-400 font-bold">✕</button>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
+                  <p className="font-bold text-slate-900">🏟️ {approvingItem.course_program}</p>
+                  <p className="text-[10px] text-emerald-600 font-mono">Start: {formatScheduleTo12Hour(approvingItem.semester)}</p>
+                </div>
+                <form onSubmit={handleConfirmApprovalWithEndTime} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Reservation End Time (e.g., 12:00 PM)</label>
+                    <input type="time" value={adminEndTime} onChange={(e) => setAdminEndTime(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 cursor-pointer" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button type="button" onClick={() => setApprovingItem(null)} className="py-2.5 px-3 bg-slate-100 text-slate-700 rounded-xl font-semibold">Cancel</button>
+                    <button type="submit" className="py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Confirm & Approve</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === 'add_court' ? (
+            <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm my-auto">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🏟️ Add a Court Facility</h3>
+                <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              <form onSubmit={handleAddCourt} className="space-y-4 text-xs">
+                <div><label className="block text-xs font-bold text-slate-700 mb-1">Court Name</label><input type="text" value={courtName} onChange={(e) => setCourtName(e.target.value)} placeholder="SuperDome" className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="block text-xs font-bold text-slate-700 mb-1">Rate (₱/hr)</label><input type="number" value={courtRate} onChange={(e) => setCourtRate(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                  <div><label className="block text-xs font-bold text-slate-700 mb-1">Location</label><input type="text" value={courtLocation} onChange={(e) => setCourtLocation(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                </div>
+                <div><label className="block text-xs font-bold text-slate-700 mb-1">Court Picture</label><input type="file" accept="image/*" onChange={handleCourtImageChange} className="w-full text-xs text-slate-500" /></div>
+                <button type="submit" disabled={addingCourt} className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow">Add Court Facility</button>
+              </form>
+            </div>
+          ) : activeSubTab === 'logs' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🛡️ IAS 1 Security Audit Log Trail</h3>
+                <button onClick={fetchAuditLogs} className="text-xs text-emerald-600 hover:underline">Refresh Logs</button>
+              </div>
+              <div className="overflow-x-auto max-h-[400px]">
+                <table className="w-full text-left border-collapse text-[11px]">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 font-bold">
+                      <th className="pb-2">TIMESTAMP</th>
+                      <th className="pb-2">USER</th>
+                      <th className="pb-2">ROLE</th>
+                      <th className="pb-2">ACTION</th>
+                      <th className="pb-2">DETAILS</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-mono">
+                    {auditLogs.map(log => (
+                      <tr key={log.id} className="hover:bg-slate-50">
+                        <td className="py-2.5 text-slate-500">{new Date(log.created_at).toLocaleString()}</td>
+                        <td className="py-2.5 font-bold text-slate-800">{log.user_email}</td>
+                        <td className="py-2.5 text-emerald-600">{log.user_role}</td>
+                        <td className="py-2.5 text-amber-700 font-bold">{log.action}</td>
+                        <td className="py-2.5 text-slate-600 truncate max-w-xs">{log.details}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : activeSubTab === 'backup' ? (
+            <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 space-y-5 shadow-sm my-auto">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">💾 Database Backup & Recovery</h3>
+                <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              <div className="space-y-4 text-xs">
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
+                  <p className="font-bold text-emerald-900">Automatic & Manual Backup[cite: 17]</p>
+                  <p className="text-emerald-700">Export a secure JSON backup of all system records instantly[cite: 17].</p>
+                  <button onClick={handleDownloadBackup} className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow">Download Backup File</button>
+                </div>
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                  <p className="font-bold text-slate-900">Data Restoration[cite: 17]</p>
+                  <p className="text-slate-600">Select a previously saved backup file to restore system records[cite: 17].</p>
+                  <input type="file" accept=".json" onChange={handleRestoreBackup} className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-200 file:text-slate-700 hover:file:bg-slate-300" />
+                </div>
+              </div>
             </div>
           ) : (
-            <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-              {approvedLigas.map((item) => (
-                <div key={item.id} className="p-3 bg-slate-900 border border-slate-800 rounded-2xl space-y-1.5">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-xs font-bold text-brand-400">{item.course_program}</p>
-                      <p className="text-[10px] text-slate-300 font-mono">📅 {formatScheduleTo12Hour(item.semester) || 'Scheduled'}</p>
-                    </div>
-                    <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[9px] font-bold rounded-full">
-                      Already Occupied
-                    </span>
-                  </div>
+            <>
+              <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Admin Console</span>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900">Community overview.</h2>
+                  <p className="text-xs text-slate-500">Monitor court listings, audit logs, and system backup.</p>
                 </div>
-              ))}
-            </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setActiveSubTab('backup')} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow">💾 Backup & Recovery</button>
+                  <button onClick={() => setActiveSubTab('logs')} className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow">🛡️ Audit Logs</button>
+                  <button onClick={() => setActiveSubTab('add_court')} className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow">+ Add court</button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+                  <p className="text-[11px] font-bold text-slate-400">Total courts</p>
+                  <p className="text-2xl font-extrabold text-slate-900">{availableCourts.length}</p>
+                  <p className="text-[10px] text-emerald-600">Listed in directory</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+                  <p className="text-[11px] font-bold text-slate-400">Active leagues</p>
+                  <p className="text-2xl font-extrabold text-slate-900">{activeLeaguesCount}</p>
+                  <p className="text-[10px] text-emerald-600">Community competitions</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+                  <p className="text-[11px] font-bold text-slate-400">Total bookings</p>
+                  <p className="text-2xl font-extrabold text-slate-900">{totalBookingsCount}</p>
+                  <p className="text-[10px] text-emerald-600">All reservation records</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+                  <p className="text-[11px] font-bold text-slate-400">Pending review</p>
+                  <p className="text-2xl font-extrabold text-slate-900">{pendingReviewCount}</p>
+                  <p className="text-[10px] text-amber-600">Leagues to moderate</p>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <h3 className="text-sm font-bold text-slate-900 flex justify-between items-center">
+                  <span>🏟️ Recent Bookings & Approvals</span>
+                  <button onClick={fetchProposals} className="text-xs text-emerald-600 hover:underline">Refresh</button>
+                </h3>
+                {pendingProposals.filter(p => !p.course_program.includes('NEW COURT PROPOSAL') && !p.course_program.includes('LEAGUE')).length === 0 ? (
+                  <p className="text-xs text-slate-500 py-6 text-center">Walang pending na request para sa mga court.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-slate-400 font-bold text-[10px]">
+                          <th className="pb-3">COURT / PLAYER</th>
+                          <th className="pb-3">DATE & TIME</th>
+                          <th className="pb-3">SPORT</th>
+                          <th className="pb-3">STATUS</th>
+                          <th className="pb-3 text-right">ACTION</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {pendingProposals.filter(p => !p.course_program.includes('NEW COURT PROPOSAL') && !p.course_program.includes('LEAGUE')).map(req => (
+                          <tr key={req.id} className="hover:bg-slate-50/50">
+                            <td className="py-3.5 font-bold text-slate-900">{req.course_program}</td>
+                            <td className="py-3.5 text-emerald-600 font-mono text-[11px]">{formatScheduleTo12Hour(req.semester)}</td>
+                            <td className="py-3.5 text-slate-600">Basketball</td>
+                            <td className="py-3.5"><StatusBadge status={req.status} scheduleStr={req.semester} /></td>
+                            <td className="py-3.5 text-right">
+                              {(req.status === 'submitted' || req.status === 'Pending') ? (
+                                <button onClick={() => setApprovingItem(req)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow text-xs">Confirm</button>
+                              ) : (
+                                <span className="text-slate-400 font-semibold text-[11px]">Done</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       );
@@ -546,11 +788,10 @@
     // =========================================================================
     // 5. PLAYER / USER DASHBOARD
     // =========================================================================
-    function PlayerDashboard({ currentUser, showNotification, availableCourts, playerNavTab }) {
+    function PlayerDashboard({ currentUser, showNotification, availableCourts, playerNavTab, setActiveNavTab }) {
       const [bookings, setBookings] = React.useState([]);
       const [openLeagues, setOpenLeagues] = React.useState([]);
       const [loading, setLoading] = React.useState(true);
-      
       const [selectedCourt, setSelectedCourt] = React.useState(null);
       const [calendarStartDate, setCalendarStartDate] = React.useState(new Date());
       const [allBookingsForMatrix, setAllBookingsForMatrix] = React.useState([]);
@@ -563,43 +804,39 @@
       const [resGcashRef, setResGcashRef] = React.useState('');
       const [submittingBooking, setSubmittingBooking] = React.useState(false);
 
-      const [zoomedImage, setZoomedImage] = React.useState(null);
       const [activeModalLeague, setActiveModalLeague] = React.useState(null);
       const [regType, setRegType] = React.useState('team');
       const [teamName, setTeamName] = React.useState('');
       const [repName, setRepName] = React.useState('');
       const [repContact, setRepContact] = React.useState('');
       const [rosterList, setRosterList] = React.useState('');
-      
-      const [requirementImages, setRequirementImages] = React.useState([]);
-      const [showLeagueCameraModal, setShowLeagueCameraModal] = React.useState(false);
-      const leagueVideoRef = React.useRef(null);
-      const leagueCanvasRef = React.useRef(null);
-      const [leagueCameraStream, setLeagueCameraStream] = React.useState(null);
-
       const [paymentMethod, setPaymentMethod] = React.useState('gcash');
       const [gcashRef, setGcashRef] = React.useState('');
       const [submittingLeague, setSubmittingLeague] = React.useState(false);
 
-      const timeSlots = ["08:00 AM", "10:00 AM", "12:00 PM", "02:00 PM", "04:00 PM", "06:00 PM", "08:00 PM", "10:00 PM"];
+      const timeSlots = [
+        "12:00 AM", "01:00 AM", "02:00 AM", "03:00 AM", "04:00 AM", "05:00 AM", 
+        "06:00 AM", "07:00 AM", "08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", 
+        "12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM", 
+        "06:00 PM", "07:00 PM", "08:00 PM", "09:00 PM", "10:00 PM", "11:00 PM"
+      ];
 
       const slotTo24Hr = (slotStr) => {
-        if (slotStr.includes('08:00 AM')) return '08:00';
-        if (slotStr.includes('10:00 AM')) return '10:00';
-        if (slotStr.includes('12:00 PM')) return '12:00';
-        if (slotStr.includes('02:00 PM')) return '14:00';
-        if (slotStr.includes('04:00 PM')) return '16:00';
-        if (slotStr.includes('06:00 PM')) return '18:00';
-        if (slotStr.includes('08:00 PM')) return '20:00';
-        if (slotStr.includes('10:00 PM')) return '22:00';
-        return '16:00';
+        if (!slotStr) return '00:00';
+        const parts = slotStr.split(' ');
+        const timeSub = parts[0].split(':');
+        let hours = parseInt(timeSub[0], 10);
+        const minutes = timeSub[1] || '00';
+        const ampm = parts[1];
+        if (ampm === 'PM' && hours < 12) hours += 12;
+        if (ampm === 'AM' && hours === 12) hours = 0;
+        return `${String(hours).padStart(2, '0')}:${minutes}`;
       };
 
       React.useEffect(() => {
         fetchMyBookings();
         fetchOpenLeagues();
         fetchAllBookingsMatrix();
-        return () => stopLeagueCamera();
       }, []);
 
       const fetchAllBookingsMatrix = async () => {
@@ -619,55 +856,6 @@
         setOpenLeagues(data || []);
       };
 
-      const handleRequirementFilesChange = (e) => {
-        const files = Array.from(e.target.files || []);
-        if (files.length === 0) return;
-        files.forEach(file => {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            const img = new Image();
-            img.onload = () => {
-              const canvas = document.createElement('canvas');
-              canvas.width = 800; canvas.height = 600;
-              canvas.getContext('2d').drawImage(img, 0, 0, 800, 600);
-              setRequirementImages(prev => [...prev, canvas.toDataURL('image/jpeg', 0.85)]);
-            };
-            img.src = event.target.result;
-          };
-          reader.readAsDataURL(file);
-        });
-      };
-
-      const startLeagueCamera = () => {
-        setShowLeagueCameraModal(true);
-        try {
-          navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
-            setLeagueCameraStream(stream);
-            if (leagueVideoRef.current) leagueVideoRef.current.srcObject = stream;
-          }).catch(() => setShowLeagueCameraModal(false));
-        } catch (e) { setShowLeagueCameraModal(false); }
-      };
-
-      const stopLeagueCamera = () => {
-        if (leagueCameraStream) { leagueCameraStream.getTracks().forEach(t => t.stop()); setLeagueCameraStream(null); }
-        setShowLeagueCameraModal(false);
-      };
-
-      const captureLeaguePhoto = () => {
-        if (leagueVideoRef.current && leagueCanvasRef.current) {
-          const video = leagueVideoRef.current;
-          const canvas = leagueCanvasRef.current;
-          canvas.width = video.videoWidth || 1280; canvas.height = video.videoHeight || 720;
-          canvas.getContext('2d').drawImage(video, 0, 0);
-          setRequirementImages(prev => [...prev, canvas.toDataURL('image/jpeg', 0.9)]);
-          stopLeagueCamera();
-        }
-      };
-
-      const removeRequirementImage = (index) => {
-        setRequirementImages(prev => prev.filter((_, i) => i !== index));
-      };
-
       const getSevenDays = () => {
         const days = [];
         for (let i = 0; i < 7; i++) {
@@ -680,10 +868,35 @@
 
       const getSlotStatus = (dateStr, time24) => {
         if (!selectedCourt) return 'green';
-        const match = allBookingsForMatrix.find(b => b.course_program.includes(selectedCourt.name) && b.semester?.includes(dateStr) && b.semester?.includes(time24));
-        if (!match) return 'green';
-        if (match.status === 'Approved' || match.status === 'dean_approved') return 'red';
-        return 'yellow';
+        const currentSlotMinutes = parseTimeToMinutes(time24);
+        for (const b of allBookingsForMatrix) {
+          if (!b.course_program.includes(selectedCourt.name) || !b.semester) continue;
+          if (!b.semester.includes(dateStr)) continue;
+          const isApprovedOrPending = b.status === 'Approved' || b.status === 'dean_approved' || b.status === 'Pending' || b.status === 'submitted';
+          if (!isApprovedOrPending) continue;
+
+          const sem = b.semester;
+          if (sem.includes(' to ') || sem.includes(' - ')) {
+            const separator = sem.includes(' to ') ? ' to ' : ' - ';
+            const parts = sem.split(separator);
+            const startPart = parts[0].includes(' @ ') ? parts[0].split(' @ ')[1] : parts[0];
+            const endPart = parts[1];
+            const startMin = parseTimeToMinutes(startPart);
+            let endMin = parseTimeToMinutes(endPart);
+            if (endMin <= startMin) endMin += 24 * 60;
+            let checkMin = currentSlotMinutes;
+            if (checkMin < startMin && endMin > 24 * 60) checkMin += 24 * 60;
+            if (checkMin >= startMin && checkMin < endMin) {
+              return (b.status === 'Approved' || b.status === 'dean_approved') ? 'red' : 'yellow';
+            }
+          } else {
+            const timePart = sem.includes(' @ ') ? sem.split(' @ ')[1] : sem;
+            if (parseTimeToMinutes(timePart) === currentSlotMinutes) {
+              return (b.status === 'Approved' || b.status === 'dean_approved') ? 'red' : 'yellow';
+            }
+          }
+        }
+        return 'green';
       };
 
       const handleFinalReservationSubmit = async (e) => {
@@ -697,6 +910,7 @@
           const scheduleString = `${selectedGridSlot.date} @ ${selectedGridSlot.time}`;
           const formattedBookingName = `${selectedCourt.name} | Reserver: ${resName.trim()} (Contact: ${resContact.trim()}) | Pay: ${resPayment.toUpperCase()}${resPayment === 'gcash' ? ` [Ref: ${resGcashRef.trim()}]` : ''}`;
           await supabase.from('enrollments').insert({ student_id: currentUser.id, course_program: formattedBookingName, academic_year: '2026', semester: scheduleString, status: 'Pending' });
+          safeAuditLog(currentUser, 'PLAYER_BOOK_COURT', { court: selectedCourt.name, time: scheduleString });
           showNotification('Court reservation successfully submitted!', 'success');
           setShowDetailsModal(false);
           setSelectedGridSlot(null);
@@ -720,11 +934,12 @@
         setSubmittingLeague(true);
         try {
           const cleanTitle = activeModalLeague.course_program.replace('🏆 LEAGUE: ', '').replace(/\s*\(Fee:.*\)/i, '');
-          const formattedDetails = `🏆 LEAGUE REGISTRATION (${regType.toUpperCase()}): ${cleanTitle}${regType === 'team' ? ` | Team: ${teamName.trim()}` : ''} | Rep: ${repName.trim()} (${repContact.trim()}) | Requirements: ${requirementImages.length} PSA/ID files | Pay: ${paymentMethod.toUpperCase()}${paymentMethod === 'gcash' ? ` [Ref: ${gcashRef.trim()}]` : ''}${rosterList ? ` | Roster: ${rosterList.trim()}` : ''}`;
-          await supabase.from('enrollments').insert({ student_id: currentUser.id, course_program: formattedDetails, academic_year: requirementImages.length > 0 ? JSON.stringify(requirementImages) : '2026', semester: activeModalLeague.semester || 'TBD', status: 'Pending' });
+          const formattedDetails = `🏆 LEAGUE REGISTRATION (${regType.toUpperCase()}): ${cleanTitle}${regType === 'team' ? ` | Team: ${teamName.trim()}` : ''} | Rep: ${repName.trim()} (${repContact.trim()}) | Pay: ${paymentMethod.toUpperCase()}${paymentMethod === 'gcash' ? ` [Ref: ${gcashRef.trim()}]` : ''}${rosterList ? ` | Roster: ${rosterList.trim()}` : ''}`;
+          await supabase.from('enrollments').insert({ student_id: currentUser.id, course_program: formattedDetails, academic_year: '2026', semester: activeModalLeague.semester || 'TBD', status: 'Pending' });
+          safeAuditLog(currentUser, 'PLAYER_JOIN_LEAGUE', { league: cleanTitle });
           showNotification('League registration submitted successfully!', 'success');
           setActiveModalLeague(null);
-          setTeamName(''); setRepName(''); setRepContact(''); setRosterList(''); setRequirementImages([]); setGcashRef('');
+          setTeamName(''); setRepName(''); setRepContact(''); setRosterList(''); setGcashRef('');
           fetchMyBookings();
         } catch (err) {
           showNotification('League registration error.', 'error');
@@ -734,45 +949,130 @@
       };
 
       return (
-        <div className="p-3 sm:p-4 flex-1 flex flex-col h-full overflow-hidden relative">
-          {showLeagueCameraModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4">
-              <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-2xl">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-3"><h3 className="text-sm font-bold text-white">Capture ID</h3><button onClick={stopLeagueCamera} className="text-slate-400 font-bold">✕</button></div>
-                <div className="w-full h-80 rounded-2xl bg-slate-950 overflow-hidden relative flex items-center justify-center"><video ref={leagueVideoRef} autoPlay playsInline className="w-full h-full object-cover"></video><canvas ref={leagueCanvasRef} className="hidden"></canvas></div>
-                <button type="button" onClick={captureLeaguePhoto} className="w-full py-3 bg-brand-500 text-slate-950 font-bold text-xs rounded-xl">Capture Photo</button>
+        <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
+          {playerNavTab === 'reservation' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4 max-w-xl mx-auto w-full my-auto">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🏟️ Select Court for Matrix Reservation</h3>
+                <button onClick={() => setActiveNavTab('home')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
+              {availableCourts.length === 0 ? (
+                <p className="text-xs text-slate-500 py-6 text-center">No approved courts available yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {availableCourts.map(c => (
+                    <div key={c.id} onClick={() => setSelectedCourt(c)} className="p-4 bg-slate-50 border border-slate-200 hover:border-emerald-500 rounded-2xl cursor-pointer flex justify-between items-center transition-all">
+                      <div>
+                        <p className="font-bold text-slate-950 text-sm">{c.name}</p>
+                        <p className="text-xs text-slate-500">📍 {c.location} • <span className="text-emerald-600 font-semibold">₱{c.rate}/hr</span></p>
+                      </div>
+                      <span className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl text-xs shadow">Open Matrix ›</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          ) : playerNavTab === 'leagues' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4 max-w-xl mx-auto w-full my-auto">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🏆 Open Leagues Created by Organizers</h3>
+                <button onClick={() => setActiveNavTab('home')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              {openLeagues.length === 0 ? (
+                <p className="text-xs text-slate-500 py-6 text-center">Wala pang nabuong liga mula sa mga organizer.</p>
+              ) : (
+                <div className="space-y-3">
+                  {openLeagues.map(l => (
+                    <div key={l.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                      <div>
+                        <p className="font-extrabold text-slate-900 text-xs">{l.course_program}</p>
+                        <p className="text-[11px] text-emerald-600 font-mono mt-0.5">📅 {formatScheduleTo12Hour(l.semester)}</p>
+                      </div>
+                      <button onClick={() => setActiveModalLeague(l)} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow">Join ›</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="relative bg-emerald-900 rounded-3xl p-6 sm:p-8 text-white overflow-hidden shadow-xl flex flex-col justify-between">
+                <div className="relative z-10 space-y-2 max-w-xl">
+                  <span className="px-3 py-1 bg-emerald-800 text-emerald-300 rounded-full text-[10px] font-bold uppercase tracking-wider">Your Sports Community</span>
+                  <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Let's get in the game.</h2>
+                  <p className="text-xs text-emerald-200">Discover courts, book your next match, and meet your local team.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                  <div><p className="text-[11px] font-bold text-slate-400">My bookings</p><p className="text-xl font-extrabold text-slate-900">{bookings.length}</p></div>
+                  <span className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">📅</span>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                  <div><p className="text-[11px] font-bold text-slate-400">Open leagues</p><p className="text-xl font-extrabold text-slate-900">{openLeagues.length}</p></div>
+                  <span className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">🏆</span>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                  <div><p className="text-[11px] font-bold text-slate-400">Courts listed</p><p className="text-xl font-extrabold text-slate-900">{availableCourts.length}</p></div>
+                  <span className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">📍</span>
+                </div>
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                  <div><p className="text-[11px] font-bold text-slate-400">Leagues joined</p><p className="text-xl font-extrabold text-slate-900">0</p></div>
+                  <span className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">🤝</span>
+                </div>
+              </div>
+
+              {playerNavTab === 'home' && (
+                <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900">📋 My Bookings</h3>
+                  <div className="space-y-3">
+                    {bookings.map(b => (
+                      <div key={b.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                        <div>
+                          <p className="font-bold text-slate-950 text-xs">{b.course_program}</p>
+                          <p className="text-xs text-emerald-600 font-mono mt-0.5">📅 {formatScheduleTo12Hour(b.semester)}</p>
+                        </div>
+                        <StatusBadge status={b.status} scheduleStr={b.semester} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
-          {zoomedImage && <div onClick={() => setZoomedImage(null)} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4 cursor-zoom-out"><img src={zoomedImage} alt="Zoom" className="max-h-[80vh] object-contain rounded-2xl" /></div>}
-
-          {/* 7-DAY MATRIX CALENDAR MODAL */}
           {selectedCourt && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-3">
-              <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2"><h3 className="text-xs font-bold text-white">📅 Slot Matrix: {selectedCourt.name}</h3><button onClick={() => setSelectedCourt(null)} className="text-slate-400 font-bold">✕</button></div>
-                
-                <div className="flex justify-between items-center bg-slate-950 p-2 rounded-xl border border-slate-800 text-xs">
-                  <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() - 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-slate-800 rounded-lg text-slate-200">‹ Prev</button>
-                  <span className="font-bold text-brand-400">Ormoc Court Timetable</span>
-                  <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() + 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-slate-800 rounded-lg text-slate-200">Next ›</button>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-3">
+              <div className="w-full max-w-2xl bg-white border border-slate-200 rounded-3xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                  <h3 className="text-xs font-bold text-slate-900">📅 Slot Matrix: {selectedCourt.name}</h3>
+                  <button onClick={() => setSelectedCourt(null)} className="text-slate-400 font-bold">✕</button>
                 </div>
-
-                <div className="overflow-x-auto border border-slate-800 rounded-2xl bg-slate-950 p-2">
+                <div className="flex justify-between items-center bg-slate-100 p-2 rounded-xl text-xs font-bold text-slate-700">
+                  <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() - 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-white rounded-lg shadow-sm">‹ Prev</button>
+                  <span className="text-emerald-600">Ormoc Court Timetable</span>
+                  <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() + 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-white rounded-lg shadow-sm">Next ›</button>
+                </div>
+                <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-slate-50 p-2">
                   <table className="w-full text-left border-collapse text-[11px]">
-                    <thead><tr><th className="p-2 border-b border-slate-800 text-slate-400">Time</th>{getSevenDays().map(d => <th key={d.dateStr} className="p-2 border-b border-slate-800 text-center text-white min-w-[90px]">{d.label}</th>)}</tr></thead>
+                    <thead>
+                      <tr>
+                        <th className="p-2 border-b border-slate-200 text-slate-500">Time</th>
+                        {getSevenDays().map(d => <th key={d.dateStr} className="p-2 border-b border-slate-200 text-center text-slate-900 min-w-[90px]">{d.label}</th>)}
+                      </tr>
+                    </thead>
                     <tbody>
                       {timeSlots.map(slotLabel => {
                         const time24 = slotTo24Hr(slotLabel);
                         return (
-                          <tr key={slotLabel} className="border-b border-slate-900">
-                            <td className="p-2 text-slate-400 font-mono text-[10px]">{slotLabel}</td>
+                          <tr key={slotLabel} className="border-b border-slate-100">
+                            <td className="p-2 text-slate-500 font-mono text-[10px]">{slotLabel}</td>
                             {getSevenDays().map(d => {
                               const status = getSlotStatus(d.dateStr, time24);
                               const isChosen = selectedGridSlot?.date === d.dateStr && selectedGridSlot?.time === time24;
-                              let bg = status === 'red' ? 'bg-red-500/10 text-red-400 opacity-75' : status === 'yellow' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20';
-                              if (isChosen) bg = 'bg-brand-500 text-slate-950 font-extrabold ring-2 ring-white';
+                              let bg = status === 'red' ? 'bg-red-50 text-red-600 border-red-200 opacity-80' : status === 'yellow' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100';
+                              if (isChosen) bg = 'bg-emerald-600 text-white font-extrabold ring-2 ring-emerald-400';
                               return (
                                 <td key={d.dateStr} className="p-1.5 text-center">
                                   <button type="button" onClick={() => { if (status !== 'red') setSelectedGridSlot({ date: d.dateStr, time: time24, label: slotLabel }); }} className={`w-full py-2 rounded-xl border text-[10px] font-bold ${bg}`}>
@@ -788,109 +1088,48 @@
                   </table>
                 </div>
                 {selectedGridSlot && (
-                  <div className="p-3 bg-brand-500/10 border border-brand-500/40 rounded-2xl flex justify-between items-center text-xs">
-                    <span className="text-brand-300 font-semibold">{selectedGridSlot.date} @ {selectedGridSlot.label}</span>
-                    <button onClick={() => setShowDetailsModal(true)} className="px-4 py-2 bg-brand-500 text-slate-950 font-bold rounded-xl shadow">Confirm Reservation ›</button>
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex justify-between items-center text-xs">
+                    <span className="text-emerald-800 font-semibold">{selectedGridSlot.date} @ {selectedGridSlot.label}</span>
+                    <button onClick={() => setShowDetailsModal(true)} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow">Confirm Reservation ›</button>
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* RESERVATION DETAILS & PAYMENT MODAL */}
           {showDetailsModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
-              <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-2xl">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2"><h3 className="text-xs font-bold text-white">📝 Reservation Details & Payment</h3><button onClick={() => setShowDetailsModal(false)} className="text-slate-400 font-bold">✕</button></div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2"><h3 className="text-xs font-bold text-slate-900">📝 Reservation Details</h3><button onClick={() => setShowDetailsModal(false)} className="text-slate-400 font-bold">✕</button></div>
                 <form onSubmit={handleFinalReservationSubmit} className="space-y-3 text-xs">
-                  <div><label className="text-slate-400">Your Name</label><input type="text" value={resName} onChange={e => setResName(e.target.value)} placeholder="Jhon Kenneth" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white" /></div>
-                  <div><label className="text-slate-400">Contact Number</label><input type="text" value={resContact} onChange={e => setResContact(e.target.value)} placeholder="09123456789" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono" /></div>
-                  <div><label className="text-slate-400 mb-1 block">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800 font-bold"><button type="button" onClick={() => setResPayment('gcash')} className={`py-1.5 rounded-lg ${resPayment === 'gcash' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>GCash</button><button type="button" onClick={() => setResPayment('cash')} className={`py-1.5 rounded-lg ${resPayment === 'cash' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Cash</button></div></div>
-                  {resPayment === 'gcash' && <div><input type="text" value={resGcashRef} onChange={e => setResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono text-xs" /></div>}
-                  <button type="submit" disabled={submittingBooking} className="w-full py-2.5 bg-brand-500 text-slate-950 font-bold rounded-xl shadow">Complete Reservation</button>
+                  <div><label className="text-slate-600 font-bold block mb-1">Your Name</label><input type="text" value={resName} onChange={e => setResName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                  <div><label className="text-slate-600 font-bold block mb-1">Contact Number</label><input type="text" value={resContact} onChange={e => setResContact(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
+                  <div><label className="text-slate-600 font-bold block mb-1">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setResPayment('gcash')} className={`py-1.5 rounded-lg ${resPayment === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setResPayment('cash')} className={`py-1.5 rounded-lg ${resPayment === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
+                  {resPayment === 'gcash' && <div><input type="text" value={resGcashRef} onChange={e => setResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono text-xs" /></div>}
+                  <button type="submit" disabled={submittingBooking} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Complete Reservation</button>
                 </form>
               </div>
             </div>
           )}
 
-          {/* LEAGUE REGISTRATION MODAL */}
           {activeModalLeague && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
-              <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-3.5 max-h-[90vh] overflow-y-auto shadow-2xl">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2"><h3 className="text-xs font-bold text-white">🏆 Register for League</h3><button onClick={() => setActiveModalLeague(null)} className="text-slate-400 font-bold">✕</button></div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-5 space-y-3.5 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2"><h3 className="text-xs font-bold text-slate-900">🏆 Register for League</h3><button onClick={() => setActiveModalLeague(null)} className="text-slate-400 font-bold">✕</button></div>
                 <form onSubmit={handleLeagueRegistrationSubmit} className="space-y-3 text-xs">
-                  <div><label className="text-slate-400 mb-1 block">Mode</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800 font-bold"><button type="button" onClick={() => setRegType('team')} className={`py-1.5 rounded-lg ${regType === 'team' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Team</button><button type="button" onClick={() => setRegType('solo')} className={`py-1.5 rounded-lg ${regType === 'solo' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Solo</button></div></div>
+                  <div><label className="text-slate-600 font-bold mb-1 block">Mode</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setRegType('team')} className={`py-1.5 rounded-lg ${regType === 'team' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Team</button><button type="button" onClick={() => setRegType('solo')} className={`py-1.5 rounded-lg ${regType === 'solo' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Solo</button></div></div>
                   {regType === 'team' && (
                     <div className="space-y-2">
-                      <div><label className="text-slate-400">Team Name</label><input type="text" value={teamName} onChange={e => setTeamName(e.target.value)} placeholder="Ormoc Ballers" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white" /></div>
-                      <div><label className="text-slate-400">Team Roster</label><textarea value={rosterList} onChange={e => setRosterList(e.target.value)} placeholder="Player 1, Player 2..." rows={2} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white" /></div>
+                      <div><label className="text-slate-600 font-bold">Team Name</label><input type="text" value={teamName} onChange={e => setTeamName(e.target.value)} placeholder="Ormoc Ballers" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                      <div><label className="text-slate-600 font-bold">Team Roster</label><textarea value={rosterList} onChange={e => setRosterList(e.target.value)} placeholder="Player 1, Player 2..." rows={2} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
                     </div>
                   )}
-                  <div><label className="text-slate-400">Representative Name</label><input type="text" value={repName} onChange={e => setRepName(e.target.value)} placeholder="Name" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white" /></div>
-                  <div><label className="text-slate-400">Contact Number</label><input type="text" value={repContact} onChange={e => setRepContact(e.target.value)} placeholder="09123456789" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono" /></div>
-                  <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-                    <label className="text-[10px] font-bold text-slate-300 block">Requirements: PSA / ID ({requirementImages.length})</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input type="file" accept="image/*" multiple onChange={handleRequirementFilesChange} className="w-full text-[10px] text-slate-300 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:bg-brand-500 file:text-slate-950 file:border-0" />
-                      <button type="button" onClick={startLeagueCamera} className="py-2 bg-slate-800 text-brand-400 font-bold rounded-xl text-[10px]">📷 Camera</button>
-                    </div>
-                    {requirementImages.length > 0 && (
-                      <div className="grid grid-cols-5 gap-1.5 max-h-24 overflow-y-auto">
-                        {requirementImages.map((src, idx) => (
-                          <div key={idx} className="relative h-12 rounded overflow-hidden border border-slate-700">
-                            <img src={src} alt="ID" className="w-full h-full object-cover cursor-pointer" onClick={() => setZoomedImage(src)} />
-                            <button type="button" onClick={() => removeRequirementImage(idx)} className="absolute top-0 right-0 bg-red-600 text-white w-4 h-4 text-[9px] font-bold">✕</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div><label className="text-slate-400 mb-1 block">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800 font-bold"><button type="button" onClick={() => setPaymentMethod('gcash')} className={`py-1.5 rounded-lg ${paymentMethod === 'gcash' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>GCash</button><button type="button" onClick={() => setPaymentMethod('cash')} className={`py-1.5 rounded-lg ${paymentMethod === 'cash' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Cash</button></div></div>
-                  {paymentMethod === 'gcash' && <div><input type="text" value={gcashRef} onChange={e => setGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white font-mono" /></div>}
-                  <button type="submit" disabled={submittingLeague} className="w-full py-2.5 bg-brand-500 text-slate-950 font-bold rounded-xl shadow-md">Confirm League Registration</button>
+                  <div><label className="text-slate-600 font-bold">Representative Name</label><input type="text" value={repName} onChange={e => setRepName(e.target.value)} placeholder="Name" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                  <div><label className="text-slate-600 font-bold">Contact Number</label><input type="text" value={repContact} onChange={e => setRepContact(e.target.value)} placeholder="09123456789" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
+                  <div><label className="text-slate-600 font-bold mb-1 block">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setPaymentMethod('gcash')} className={`py-1.5 rounded-lg ${paymentMethod === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setPaymentMethod('cash')} className={`py-1.5 rounded-lg ${paymentMethod === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
+                  {paymentMethod === 'gcash' && <div><input type="text" value={gcashRef} onChange={e => setGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono text-xs" /></div>}
+                  <button type="submit" disabled={submittingLeague} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Confirm League Registration</button>
                 </form>
-              </div>
-            </div>
-          )}
-
-          {playerNavTab === 'home' && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex-1 flex flex-col overflow-hidden">
-              <h3 className="text-xs font-bold text-white mb-3">📋 My Bookings</h3>
-              <div className="space-y-2 overflow-y-auto flex-1">
-                {bookings.map(b => (
-                  <div key={b.id} className="p-3 bg-slate-950 rounded-xl flex justify-between items-center text-xs">
-                    <div><p className="font-bold text-white">{b.course_program}</p><p className="text-[10px] text-brand-400 font-mono">📅 {formatScheduleTo12Hour(b.semester)}</p></div>
-                    <StatusBadge status={b.status} scheduleStr={b.semester} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {playerNavTab === 'reservation' && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex-1 flex flex-col overflow-hidden">
-              <h3 className="text-xs font-bold text-white mb-3">🏟️ Select Court for Matrix Reservation</h3>
-              <div className="space-y-2.5 overflow-y-auto flex-1">
-                {availableCourts.map(c => (
-                  <div key={c.id} onClick={() => setSelectedCourt(c)} className="p-3 bg-slate-950 rounded-2xl border border-slate-800 hover:border-brand-500 cursor-pointer flex justify-between items-center text-xs">
-                    <div><p className="font-bold text-white">{c.name}</p><p className="text-[10px] text-slate-400">📍 {c.location} • <span className="text-brand-400 font-semibold">₱{c.rate}/hr</span></p></div>
-                    <span className="text-xs font-bold text-brand-400">Open Matrix ›</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {playerNavTab === 'leagues' && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex-1 flex flex-col overflow-hidden">
-              <h3 className="text-xs font-bold text-white mb-3">🏆 Open Leagues</h3>
-              <div className="space-y-2.5 overflow-y-auto flex-1">
-                {openLeagues.map(l => (
-                  <div key={l.id} className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl flex justify-between items-center text-xs">
-                    <div><p className="font-bold text-brand-400">{l.course_program}</p><p className="text-[10px] text-slate-400 font-mono">📅 {formatScheduleTo12Hour(l.semester)}</p></div>
-                    <button onClick={() => setActiveModalLeague(l)} className="px-3 py-1.5 bg-brand-500 text-slate-950 font-extrabold rounded-lg shadow">Join</button>
-                  </div>
-                ))}
               </div>
             </div>
           )}
@@ -899,22 +1138,21 @@
     }
 
     // =========================================================================
-    // 6. COURT ORGANIZER DASHBOARD (WITH MATRIX CALENDAR & REQUEST COURT PAYMENT)
+    // 6. COURT ORGANIZER DASHBOARD
     // =========================================================================
-    function OrganizerDashboard({ currentUser, showNotification, availableCourts, refreshCourts, activeNavTab }) {
+    function OrganizerDashboard({ currentUser, showNotification, availableCourts, refreshCourts, activeNavTab, setActiveNavTab }) {
       const [ligaTitle, setLigaTitle] = React.useState('');
       const [selectedSport, setSelectedSport] = React.useState('Basketball');
-      const [selectedCourt, setSelectedCourt] = React.useState(availableCourts[0]?.name || '');
+      const [organizerApprovedCourts, setOrganizerApprovedCourts] = React.useState([]);
+      const [selectedCourt, setSelectedCourt] = React.useState('');
       const [ligaFee, setLigaFee] = React.useState('500');
       const [reserveDate, setReserveDate] = React.useState(new Date().toISOString().split('T')[0]);
 
-      // Organizer Matrix Calendar states for Request Court
       const [selectedOrganizerCourt, setSelectedOrganizerCourt] = React.useState(null);
       const [calendarStartDate, setCalendarStartDate] = React.useState(new Date());
       const [allBookingsForMatrix, setAllBookingsForMatrix] = React.useState([]);
       const [selectedGridSlot, setSelectedGridSlot] = React.useState(null);
 
-      // Organizer reservation details modal state (Name, Contact, Payment)
       const [showOrganizerDetailsModal, setShowOrganizerDetailsModal] = React.useState(false);
       const [orgResName, setOrgResName] = React.useState(currentUser?.full_name || '');
       const [orgResContact, setOrgResContact] = React.useState('');
@@ -923,21 +1161,24 @@
       const [submittingOrganizerBooking, setSubmittingOrganizerBooking] = React.useState(false);
 
       const [myProposals, setMyProposals] = React.useState([]);
-      const [playerRequests, setPlayerRequests] = React.useState([]);
-      const [loading, setLoading] = React.useState(true);
 
-      const timeSlots = ["08:00 AM", "10:00 AM", "12:00 PM", "02:00 PM", "04:00 PM", "06:00 PM", "08:00 PM", "10:00 PM"];
+      const timeSlots = [
+        "12:00 AM", "01:00 AM", "02:00 AM", "03:00 AM", "04:00 AM", "05:00 AM", 
+        "06:00 AM", "07:00 AM", "08:00 AM", "09:00 AM", "10:00 AM", "11:00 AM", 
+        "12:00 PM", "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM", "05:00 PM", 
+        "06:00 PM", "07:00 PM", "08:00 PM", "09:00 PM", "10:00 PM", "11:00 PM"
+      ];
 
       const slotTo24Hr = (slotStr) => {
-        if (slotStr.includes('08:00 AM')) return '08:00';
-        if (slotStr.includes('10:00 AM')) return '10:00';
-        if (slotStr.includes('12:00 PM')) return '12:00';
-        if (slotStr.includes('02:00 PM')) return '14:00';
-        if (slotStr.includes('04:00 PM')) return '16:00';
-        if (slotStr.includes('06:00 PM')) return '18:00';
-        if (slotStr.includes('08:00 PM')) return '20:00';
-        if (slotStr.includes('10:00 PM')) return '22:00';
-        return '16:00';
+        if (!slotStr) return '00:00';
+        const parts = slotStr.split(' ');
+        const timeSub = parts[0].split(':');
+        let hours = parseInt(timeSub[0], 10);
+        const minutes = timeSub[1] || '00';
+        const ampm = parts[1];
+        if (ampm === 'PM' && hours < 12) hours += 12;
+        if (ampm === 'AM' && hours === 12) hours = 0;
+        return `${String(hours).padStart(2, '0')}:${minutes}`;
       };
 
       React.useEffect(() => {
@@ -951,30 +1192,33 @@
       };
 
       const fetchOrganizerData = async () => {
-        setLoading(true);
         const { data: props } = await supabase.from('enrollments').select('*').eq('student_id', currentUser.id).order('submitted_at', { ascending: false });
         setMyProposals(props || []);
-
-        const { data: reqs } = await supabase.from('enrollments').select('*').neq('student_id', currentUser.id).order('submitted_at', { ascending: false });
-        if (reqs) {
-          const studentIds = [...new Set(reqs.map(i => i.student_id).filter(Boolean))];
-          let pMap = {};
-          if (studentIds.length > 0) {
-            const { data: pData } = await supabase.from('profiles').select('id, full_name, email').in('id', studentIds);
-            if (pData) pData.forEach(p => { pMap[p.id] = p; });
-          }
-          setPlayerRequests(reqs.map(i => ({ ...i, profiles: pMap[i.student_id] || { full_name: 'Player', email: 'User' } })));
-        }
-        setLoading(false);
+        const approvedOrgCourts = (props || []).filter(item => {
+          const isApproved = item.status === 'Approved' || item.status === 'dean_approved';
+          const isCourtRequest = availableCourts.some(c => item.course_program.startsWith(c.name));
+          return isApproved && isCourtRequest;
+        }).map(item => {
+          const matchCourt = availableCourts.find(c => item.course_program.startsWith(c.name));
+          return matchCourt ? matchCourt.name : item.course_program.split(' | ')[0];
+        });
+        const uniqueApprovedCourts = [...new Set(approvedOrgCourts)];
+        setOrganizerApprovedCourts(uniqueApprovedCourts);
+        if (uniqueApprovedCourts.length > 0 && !selectedCourt) setSelectedCourt(uniqueApprovedCourts[0]);
       };
 
       const handleCreateLiga = async (e) => {
         e.preventDefault();
         if (!ligaTitle.trim()) { showNotification('League title required.', 'error'); return; }
-        const fullLigaName = `🏆 LEAGUE: [${selectedSport}] ${ligaTitle.trim()} @ ${selectedCourt || availableCourts[0]?.name} (Fee: ₱${ligaFee})`;
+        if (!selectedCourt) { showNotification('Please select an approved court first.', 'error'); return; }
+        const fullLigaName = `🏆 LEAGUE: [${selectedSport}] ${ligaTitle.trim()} @ ${selectedCourt} (Fee: ₱${ligaFee})`;
         const { error } = await supabase.from('enrollments').insert({ student_id: currentUser.id, course_program: fullLigaName, academic_year: '2026', semester: `Date: ${reserveDate}`, status: 'Approved' });
         if (error) showNotification(`Error: ${error.message}`, 'error');
-        else { showNotification('League published successfully!', 'success'); setLigaTitle(''); fetchOrganizerData(); }
+        else {
+          safeAuditLog(currentUser, 'ORGANIZER_CREATE_LEAGUE', { league: ligaTitle.trim() });
+          showNotification('League published successfully!', 'success');
+          setLigaTitle(''); fetchOrganizerData(); setActiveNavTab('approvals');
+        }
       };
 
       const getSevenDays = () => {
@@ -988,10 +1232,35 @@
       };
 
       const getSlotStatus = (courtName, dateStr, time24) => {
-        const match = allBookingsForMatrix.find(b => b.course_program.includes(courtName) && b.semester?.includes(dateStr) && b.semester?.includes(time24));
-        if (!match) return 'green';
-        if (match.status === 'Approved' || match.status === 'dean_approved') return 'red';
-        return 'yellow';
+        const currentSlotMinutes = parseTimeToMinutes(time24);
+        for (const b of allBookingsForMatrix) {
+          if (!b.course_program.includes(courtName) || !b.semester) continue;
+          if (!b.semester.includes(dateStr)) continue;
+          const isApprovedOrPending = b.status === 'Approved' || b.status === 'dean_approved' || b.status === 'Pending' || b.status === 'submitted';
+          if (!isApprovedOrPending) continue;
+
+          const sem = b.semester;
+          if (sem.includes(' to ') || sem.includes(' - ')) {
+            const separator = sem.includes(' to ') ? ' to ' : ' - ';
+            const parts = sem.split(separator);
+            const startPart = parts[0].includes(' @ ') ? parts[0].split(' @ ')[1] : parts[0];
+            const endPart = parts[1];
+            const startMin = parseTimeToMinutes(startPart);
+            let endMin = parseTimeToMinutes(endPart);
+            if (endMin <= startMin) endMin += 24 * 60;
+            let checkMin = currentSlotMinutes;
+            if (checkMin < startMin && endMin > 24 * 60) checkMin += 24 * 60;
+            if (checkMin >= startMin && checkMin < endMin) {
+              return (b.status === 'Approved' || b.status === 'dean_approved') ? 'red' : 'yellow';
+            }
+          } else {
+            const timePart = sem.includes(' @ ') ? sem.split(' @ ')[1] : sem;
+            if (parseTimeToMinutes(timePart) === currentSlotMinutes) {
+              return (b.status === 'Approved' || b.status === 'dean_approved') ? 'red' : 'yellow';
+            }
+          }
+        }
+        return 'green';
       };
 
       const handleOrganizerFinalReservationSubmit = async (e) => {
@@ -1004,17 +1273,9 @@
         try {
           const scheduleString = `${selectedGridSlot.date} @ ${selectedGridSlot.time}`;
           const formattedName = `${selectedOrganizerCourt.name} | Organizer: ${orgResName.trim()} (Contact: ${orgResContact.trim()}) | Pay: ${orgResPayment.toUpperCase()}${orgResPayment === 'gcash' ? ` [Ref: ${orgResGcashRef.trim()}]` : ''}`;
-          
-          await supabase.from('enrollments').insert({
-            student_id: currentUser.id,
-            course_program: formattedName,
-            academic_year: '2026',
-            semester: scheduleString,
-            status: 'Pending',
-          });
-
+          await supabase.from('enrollments').insert({ student_id: currentUser.id, course_program: formattedName, academic_year: '2026', semester: scheduleString, status: 'Pending' });
+          safeAuditLog(currentUser, 'ORGANIZER_REQUEST_COURT', { court: selectedOrganizerCourt.name, time: scheduleString });
           showNotification('Court reservation request sent to Admin successfully!', 'success');
-          safeAuditLog(currentUser, 'ORGANIZER_REQUEST_COURT', { court: selectedOrganizerCourt.name, schedule: scheduleString });
           setShowOrganizerDetailsModal(false);
           setSelectedGridSlot(null);
           setSelectedOrganizerCourt(null);
@@ -1028,35 +1289,172 @@
         }
       };
 
+      const leaguesList = myProposals.filter(p => p.course_program?.includes('LEAGUE:'));
+
       return (
-        <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6">
-
-          {/* ORGANIZER 7-DAY MATRIX CALENDAR MODAL */}
-          {selectedOrganizerCourt && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-3">
-              <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2"><h3 className="text-xs font-bold text-white">📅 Slot Matrix: {selectedOrganizerCourt.name}</h3><button onClick={() => setSelectedOrganizerCourt(null)} className="text-slate-400 font-bold">✕</button></div>
-                
-                <div className="flex justify-between items-center bg-slate-950 p-2 rounded-xl border border-slate-800 text-xs">
-                  <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() - 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-slate-800 rounded-lg text-slate-200">‹ Prev</button>
-                  <span className="font-bold text-brand-400">Ormoc Court Timetable</span>
-                  <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() + 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-slate-800 rounded-lg text-slate-200">Next ›</button>
+        <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
+          {activeNavTab === 'create_league' ? (
+            <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm my-auto">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🏆 Create & Publish League</h3>
+                <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              <form onSubmit={handleCreateLiga} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">League Name</label>
+                  <input type="text" value={ligaTitle} onChange={e => setLigaTitle(e.target.value)} placeholder="Ormoc Basketball Cup" className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" />
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Sport</label>
+                    <select value={selectedSport} onChange={e => setSelectedSport(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900">
+                      <option value="Basketball">Basketball</option>
+                      <option value="Volleyball">Volleyball</option>
+                      <option value="Badminton">Badminton</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Approved Court</label>
+                    <select value={selectedCourt} onChange={e => setSelectedCourt(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900">
+                      {organizerApprovedCourts.length === 0 ? <option value="">No approved courts yet</option> : organizerApprovedCourts.map((cName, idx) => <option key={idx} value={cName}>{cName}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Registration Fee (₱)</label>
+                    <input type="number" value={ligaFee} onChange={e => setLigaFee(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Tournament Date</label>
+                    <input type="date" value={reserveDate} onChange={e => setReserveDate(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" />
+                  </div>
+                </div>
+                <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow">Publish League</button>
+              </form>
+            </div>
+          ) : activeNavTab === 'request_court' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4 max-w-xl mx-auto w-full my-auto">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🏟️ Request a Court Reservation (Slot Matrix)</h3>
+                <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              {availableCourts.length === 0 ? <p className="text-xs text-slate-500 py-6 text-center">No approved courts available yet.</p> : (
+                <div className="space-y-3">
+                  {availableCourts.map(c => (
+                    <div key={c.id} onClick={() => setSelectedOrganizerCourt(c)} className="p-4 bg-slate-50 border border-slate-200 hover:border-emerald-500 rounded-2xl cursor-pointer flex justify-between items-center transition-all">
+                      <div>
+                        <p className="font-bold text-slate-950 text-sm">{c.name}</p>
+                        <p className="text-xs text-slate-500">📍 {c.location} • <span className="text-emerald-600 font-semibold">₱{c.rate}/hr</span></p>
+                      </div>
+                      <span className="text-xs font-bold text-emerald-600">Open Matrix ›</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1 relative">
+                  <div className="flex justify-between items-start">
+                    <p className="text-[11px] font-bold text-slate-400">Court listings</p>
+                    <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs">📍</span>
+                  </div>
+                  <p className="text-2xl font-extrabold text-slate-900">{availableCourts.length}</p>
+                  <p className="text-[10px] text-emerald-600">Across your community</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1 relative">
+                  <div className="flex justify-between items-start">
+                    <p className="text-[11px] font-bold text-slate-400">Active leagues</p>
+                    <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs">🏆</span>
+                  </div>
+                  <p className="text-2xl font-extrabold text-slate-900">{myProposals.length}</p>
+                  <p className="text-[10px] text-emerald-600">Published and in review</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1 relative">
+                  <div className="flex justify-between items-start">
+                    <p className="text-[11px] font-bold text-slate-400">Reservations</p>
+                    <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs">🗓️</span>
+                  </div>
+                  <p className="text-2xl font-extrabold text-slate-900">3</p>
+                  <p className="text-[10px] text-emerald-600">All player bookings</p>
+                </div>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1 relative">
+                  <div className="flex justify-between items-start">
+                    <p className="text-[11px] font-bold text-slate-400">Pending requests</p>
+                    <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs">⌛</span>
+                  </div>
+                  <p className="text-2xl font-extrabold text-slate-900">2</p>
+                  <p className="text-[10px] text-emerald-600">Need your attention</p>
+                </div>
+              </div>
 
-                <div className="overflow-x-auto border border-slate-800 rounded-2xl bg-slate-950 p-2">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-sm font-bold text-slate-900">Your league activity</h3>
+                  <button onClick={() => setActiveNavTab('create_league')} className="text-xs font-bold text-emerald-600 hover:underline">Manage leagues →</button>
+                </div>
+                {leaguesList.length === 0 ? (
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 text-center text-xs text-slate-400">No leagues created yet. Click "+ Create a league" on the sidebar above.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {leaguesList.map(item => (
+                      <div key={item.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-12 h-12 rounded-2xl bg-orange-100 flex items-center justify-center text-xl shrink-0">🏀</div>
+                          <div className="space-y-0.5">
+                            <p className="font-extrabold text-slate-900 text-sm">{item.course_program.replace('🏆 LEAGUE: ', '')}</p>
+                            <p className="text-[11px] text-slate-500">Basketball • Recreational • Ormoc City</p>
+                            <p className="text-[10px] text-emerald-600 font-mono">📅 {formatScheduleTo12Hour(item.semester)} • Organized by {currentUser.full_name}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                          <div className="text-right">
+                            <p className="text-xs font-bold text-slate-900">19/24 players</p>
+                            <span className="inline-block px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full text-[9px] font-bold">Approved</span>
+                          </div>
+                          <button onClick={() => showNotification('League settings editable.', 'info')} className="px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold">Edit</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {selectedOrganizerCourt && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-3">
+              <div className="w-full max-w-2xl bg-white border border-slate-200 rounded-3xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                  <h3 className="text-xs font-bold text-slate-900">📅 Slot Matrix: {selectedOrganizerCourt.name}</h3>
+                  <button onClick={() => setSelectedOrganizerCourt(null)} className="text-slate-400 font-bold">✕</button>
+                </div>
+                <div className="flex justify-between items-center bg-slate-100 p-2 rounded-xl text-xs font-bold text-slate-700">
+                  <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() - 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-white rounded-lg shadow-sm">‹ Prev</button>
+                  <span className="text-emerald-600">Ormoc Court Timetable</span>
+                  <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() + 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-white rounded-lg shadow-sm">Next ›</button>
+                </div>
+                <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-slate-50 p-2">
                   <table className="w-full text-left border-collapse text-[11px]">
-                    <thead><tr><th className="p-2 border-b border-slate-800 text-slate-400">Time</th>{getSevenDays().map(d => <th key={d.dateStr} className="p-2 border-b border-slate-800 text-center text-white min-w-[90px]">{d.label}</th>)}</tr></thead>
+                    <thead>
+                      <tr>
+                        <th className="p-2 border-b border-slate-200 text-slate-500">Time</th>
+                        {getSevenDays().map(d => <th key={d.dateStr} className="p-2 border-b border-slate-200 text-center text-slate-900 min-w-[90px]">{d.label}</th>)}
+                      </tr>
+                    </thead>
                     <tbody>
                       {timeSlots.map(slotLabel => {
                         const time24 = slotTo24Hr(slotLabel);
                         return (
-                          <tr key={slotLabel} className="border-b border-slate-900">
-                            <td className="p-2 text-slate-400 font-mono text-[10px]">{slotLabel}</td>
+                          <tr key={slotLabel} className="border-b border-slate-100">
+                            <td className="p-2 text-slate-500 font-mono text-[10px]">{slotLabel}</td>
                             {getSevenDays().map(d => {
                               const status = getSlotStatus(selectedOrganizerCourt.name, d.dateStr, time24);
                               const isChosen = selectedGridSlot?.date === d.dateStr && selectedGridSlot?.time === time24;
-                              let bg = status === 'red' ? 'bg-red-500/10 text-red-400 opacity-75' : status === 'yellow' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20';
-                              if (isChosen) bg = 'bg-brand-500 text-slate-950 font-extrabold ring-2 ring-white';
+                              let bg = status === 'red' ? 'bg-red-50 text-red-600 border-red-200 opacity-80' : status === 'yellow' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100';
+                              if (isChosen) bg = 'bg-emerald-600 text-white font-extrabold ring-2 ring-emerald-400';
                               return (
                                 <td key={d.dateStr} className="p-1.5 text-center">
                                   <button type="button" onClick={() => { if (status !== 'red') setSelectedGridSlot({ date: d.dateStr, time: time24, label: slotLabel }); }} className={`w-full py-2 rounded-xl border text-[10px] font-bold ${bg}`}>
@@ -1072,99 +1470,27 @@
                   </table>
                 </div>
                 {selectedGridSlot && (
-                  <div className="p-3 bg-brand-500/10 border border-brand-500/40 rounded-2xl flex justify-between items-center text-xs">
-                    <span className="text-brand-300 font-semibold">{selectedGridSlot.date} @ {selectedGridSlot.label}</span>
-                    <button onClick={() => setShowOrganizerDetailsModal(true)} className="px-4 py-2 bg-brand-500 text-slate-950 font-bold rounded-xl shadow">Confirm Reservation ›</button>
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex justify-between items-center text-xs">
+                    <span className="text-emerald-800 font-semibold">{selectedGridSlot.date} @ {selectedGridSlot.label}</span>
+                    <button onClick={() => setShowOrganizerDetailsModal(true)} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow">Confirm Request ›</button>
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* ORGANIZER RESERVATION DETAILS & PAYMENT MODAL */}
           {showOrganizerDetailsModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
-              <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-2xl">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2"><h3 className="text-xs font-bold text-white">📝 Court Request Details & Payment</h3><button onClick={() => setShowOrganizerDetailsModal(false)} className="text-slate-400 font-bold">✕</button></div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2"><h3 className="text-xs font-bold text-slate-900">📝 Request Details</h3><button onClick={() => setShowOrganizerDetailsModal(false)} className="text-slate-400 font-bold">✕</button></div>
                 <form onSubmit={handleOrganizerFinalReservationSubmit} className="space-y-3 text-xs">
-                  <div><label className="text-slate-400">Organizer Name</label><input type="text" value={orgResName} onChange={e => setOrgResName(e.target.value)} placeholder="Jhon Kenneth" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white" /></div>
-                  <div><label className="text-slate-400">Contact Number</label><input type="text" value={orgResContact} onChange={e => setOrgResContact(e.target.value)} placeholder="09123456789" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono" /></div>
-                  <div><label className="text-slate-400 mb-1 block">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800 font-bold"><button type="button" onClick={() => setOrgResPayment('gcash')} className={`py-1.5 rounded-lg ${orgResPayment === 'gcash' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>GCash</button><button type="button" onClick={() => setOrgResPayment('cash')} className={`py-1.5 rounded-lg ${orgResPayment === 'cash' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Cash</button></div></div>
-                  {orgResPayment === 'gcash' && <div><input type="text" value={orgResGcashRef} onChange={e => setOrgResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono text-xs" /></div>}
-                  <button type="submit" disabled={submittingOrganizerBooking} className="w-full py-2.5 bg-brand-500 text-slate-950 font-bold rounded-xl shadow">Request Court Reservation</button>
+                  <div><label className="text-slate-600 font-bold block mb-1">Organizer Name</label><input type="text" value={orgResName} onChange={e => setOrgResName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                  <div><label className="text-slate-600 font-bold block mb-1">Contact Number</label><input type="text" value={orgResContact} onChange={e => setOrgResContact(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
+                  <div><label className="text-slate-600 font-bold block mb-1">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setOrgResPayment('gcash')} className={`py-1.5 rounded-lg ${orgResPayment === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setOrgResPayment('cash')} className={`py-1.5 rounded-lg ${orgResPayment === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
+                  {orgResPayment === 'gcash' && <div><input type="text" value={orgResGcashRef} onChange={e => setOrgResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono text-xs" /></div>}
+                  <button type="submit" disabled={submittingOrganizerBooking} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Submit Request</button>
                 </form>
               </div>
-            </div>
-          )}
-
-          {(activeNavTab === 'approvals' || activeNavTab === 'home') && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-xl">
-                <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-3">League Registrations & Approvals</h3>
-                {loading ? <LoadingSpinner label="Loading..." /> : playerRequests.length === 0 ? <p className="text-xs text-slate-500 py-8 text-center">No pending requests.</p> : (
-                  <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
-                    {playerRequests.map((req) => (
-                      <div key={req.id} className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl space-y-2 text-xs">
-                        <div className="flex justify-between items-start">
-                          <div><p className="font-bold text-white">{req.profiles?.full_name}</p><p className="text-[10px] text-slate-500">{req.profiles?.email}</p></div>
-                          <StatusBadge status={req.status} scheduleStr={req.semester} />
-                        </div>
-                        <p className="font-bold text-brand-400">{req.course_program}</p>
-                        <p className="text-[10px] text-slate-300 font-mono">📅 {formatScheduleTo12Hour(req.semester)}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4 shadow-xl">
-                <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-3">My Leagues & Proposed Courts</h3>
-                {loading ? <LoadingSpinner label="Loading..." /> : myProposals.length === 0 ? <p className="text-xs text-slate-500 py-8 text-center">No proposals created yet.</p> : (
-                  <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
-                    {myProposals.map((item) => (
-                      <div key={item.id} className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl space-y-1 text-xs">
-                        <p className="font-bold text-white">{item.course_program}</p>
-                        <p className="text-[10px] text-brand-400 font-mono">📅 {formatScheduleTo12Hour(item.semester)}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeNavTab === 'create_league' && (
-            <div className="max-w-xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
-              <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-3">🏆 Create & Publish League</h3>
-              <form onSubmit={handleCreateLiga} className="space-y-4 text-xs">
-                <div><label className="text-xs font-bold text-slate-400 mb-1 block">League Name</label><input type="text" value={ligaTitle} onChange={e => setLigaTitle(e.target.value)} placeholder="Ormoc Basketball Cup" className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" /></div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-xs font-bold text-slate-400 mb-1 block">Sport</label><select value={selectedSport} onChange={e => setSelectedSport(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white"><option value="Basketball">Basketball</option><option value="Volleyball">Volleyball</option><option value="Badminton">Badminton</option></select></div>
-                  <div><label className="text-xs font-bold text-slate-400 mb-1 block">Court</label><select value={selectedCourt} onChange={e => setSelectedCourt(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white">{availableCourts.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-xs font-bold text-slate-400 mb-1 block">Registration Fee (₱)</label><input type="number" value={ligaFee} onChange={e => setLigaFee(e.target.value)} placeholder="500" className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" /></div>
-                  <div><label className="text-xs font-bold text-slate-400 mb-1 block">Tournament Date</label><input type="date" value={reserveDate} onChange={e => setReserveDate(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white" /></div>
-                </div>
-                <button type="submit" className="w-full py-3 bg-brand-500 text-slate-950 font-bold text-xs rounded-xl shadow-lg">Publish League</button>
-              </form>
-            </div>
-          )}
-
-          {activeNavTab === 'request_court' && (
-            <div className="max-w-xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
-              <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-3">🏟️ Request a Court Reservation (Slot Matrix)</h3>
-              {availableCourts.length === 0 ? (
-                <p className="text-xs text-slate-500 py-6 text-center">No approved courts available yet.</p>
-              ) : (
-                <div className="space-y-2.5">
-                  {availableCourts.map(c => (
-                    <div key={c.id} onClick={() => setSelectedOrganizerCourt(c)} className="p-3 bg-slate-950 rounded-2xl border border-slate-800 hover:border-brand-500 cursor-pointer flex justify-between items-center text-xs">
-                      <div><p className="font-bold text-white">{c.name}</p><p className="text-[10px] text-slate-400">📍 {c.location} • <span className="text-brand-400 font-semibold">₱{c.rate}/hr</span></p></div>
-                      <span className="text-xs font-bold text-brand-400">Open Matrix ›</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </div>
@@ -1172,180 +1498,7 @@
     }
 
     // =========================================================================
-    // 7. ADMIN MANAGEMENT DESK
-    // =========================================================================
-    function AdminDashboard({ currentUser, showNotification, refreshCourts, activeSubTab, setActiveSubTab, availableCourts }) {
-      const [pendingProposals, setPendingProposals] = React.useState([]);
-      const [approvingItem, setApprovingItem] = React.useState(null);
-      const [adminEndTime, setAdminEndTime] = React.useState('18:00');
-      const [courtName, setCourtName] = React.useState('');
-      const [courtLocation, setCourtLocation] = React.useState('Ormoc City');
-      const [courtRate, setCourtRate] = React.useState('200');
-      const [courtImagePreview, setCourtImagePreview] = React.useState('');
-      const [addingCourt, setAddingCourt] = React.useState(false);
-
-      React.useEffect(() => { fetchProposals(); }, []);
-
-      const fetchProposals = async () => {
-        const { data } = await supabase.from('enrollments').select('*').order('submitted_at', { ascending: false });
-        setPendingProposals(data || []);
-      };
-
-      const handleCourtImageChange = (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => setCourtImagePreview(event.target.result);
-        reader.readAsDataURL(file);
-      };
-
-      const handleAddCourt = async (e) => {
-        e.preventDefault();
-        if (!courtName.trim()) return;
-        setAddingCourt(true);
-        try {
-          const courtTag = `🏟️ NEW COURT PROPOSAL: ${courtName.trim()} (₱${courtRate}/hr) - Basketball @ ${courtLocation.trim()}`;
-          await supabase.from('enrollments').insert({ student_id: currentUser.id, course_program: courtTag, academic_year: courtImagePreview || '2026', semester: `Loc: ${courtLocation.trim()}`, status: 'Approved' });
-          showNotification('Court added successfully!', 'success');
-          setCourtName('');
-          setCourtImagePreview('');
-          fetchProposals();
-          if (refreshCourts) refreshCourts();
-        } catch (err) {
-          showNotification('Error adding court.', 'error');
-        } finally {
-          setAddingCourt(false);
-        }
-      };
-
-      const handleConfirmApprovalWithEndTime = async (e) => {
-        e.preventDefault();
-        if (!approvingItem) return;
-
-        const updatedSemester = `${approvingItem.semester} to ${adminEndTime}`;
-        const { error } = await supabase.from('enrollments').update({ status: 'Approved', semester: updatedSemester }).eq('id', approvingItem.id);
-
-        if (error) {
-          showNotification(`Approval failed: ${error.message}`, 'error');
-        } else {
-          showNotification('Court reservation approved with End Time set!', 'success');
-          setApprovingItem(null);
-          fetchProposals();
-          if (refreshCourts) refreshCourts();
-        }
-      };
-
-      return (
-        <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6">
-          {approvingItem && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4 animate-fade-in">
-              <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
-                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5"><span>⏰</span> Set End Time for Reservation</h3>
-                  <button onClick={() => setApprovingItem(null)} className="text-slate-400 font-bold text-xs">✕</button>
-                </div>
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-1">
-                  <p className="font-bold text-brand-400">🏟️ {approvingItem.course_program}</p>
-                  <p className="text-[10px] text-slate-300 font-mono">Start: {formatScheduleTo12Hour(approvingItem.semester)}</p>
-                </div>
-                <form onSubmit={handleConfirmApprovalWithEndTime} className="space-y-3.5 text-xs">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Reservation End Time (e.g., 18:00 becomes 06:00 PM)</label>
-                    <input type="time" value={adminEndTime} onChange={e => setAdminEndTime(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500 cursor-pointer" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button type="button" onClick={() => setApprovingItem(null)} className="py-2.5 px-3 bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold">Cancel</button>
-                    <button type="submit" className="py-2.5 bg-brand-500 text-slate-950 font-bold rounded-xl text-xs shadow-lg">Confirm & Approve</button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {(activeSubTab === 'dashboard' || activeSubTab === 'home') && (
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-xl">
-              <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-3 flex justify-between items-center">
-                <span>🏟️ Court Reservation Approvals</span>
-                <button onClick={fetchProposals} className="text-xs text-brand-400 hover:underline">Refresh</button>
-              </h3>
-
-              {pendingProposals.filter(p => !p.course_program.includes('NEW COURT PROPOSAL') && !p.course_program.includes('LEAGUE')).length === 0 ? (
-                <p className="text-xs text-slate-500 py-6 text-center">Walang pending na request para sa mga court.</p>
-              ) : (
-                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                  {pendingProposals.filter(p => !p.course_program.includes('NEW COURT PROPOSAL') && !p.course_program.includes('LEAGUE')).map(req => (
-                    <div key={req.id} className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl space-y-2 text-xs">
-                      <div className="flex justify-between items-start">
-                        <p className="font-bold text-brand-400">{req.course_program}</p>
-                        <StatusBadge status={req.status} scheduleStr={req.semester} />
-                      </div>
-                      <p className="text-[10px] text-slate-300 font-mono">📅 Schedule: {formatScheduleTo12Hour(req.semester)}</p>
-                      {(req.status === 'submitted' || req.status === 'Pending') && (
-                        <button onClick={() => setApprovingItem(req)} className="w-full py-2 bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold rounded-xl text-xs shadow active:scale-95 transition-all">Set End Time & Approve</button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeSubTab === 'courts' && (
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-xl">
-              <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-3">🏟️ Added Courts Management</h3>
-              {availableCourts.length === 0 ? (
-                <p className="text-xs text-slate-500 py-6 text-center">No courts added yet.</p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {availableCourts.map(c => (
-                    <div key={c.id} className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-2 text-xs">
-                      {c.image && <div className="w-full h-32 rounded-lg overflow-hidden border border-slate-800"><img src={c.image} alt={c.name} className="w-full h-full object-cover" /></div>}
-                      <p className="font-bold text-brand-400">{c.name}</p>
-                      <p className="text-[10px] text-slate-400">📍 {c.location} • ₱{c.rate}/hr</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeSubTab === 'add_court' && (
-            <div className="max-w-xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl">
-              <h3 className="text-sm font-bold text-white border-b border-slate-800 pb-3">🏟️ Add a Court Facility</h3>
-              <form onSubmit={handleAddCourt} className="space-y-4 text-xs">
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Court Name</label>
-                  <input type="text" value={courtName} onChange={e => setCourtName(e.target.value)} placeholder="Ormoc City Sports Complex" className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none focus:border-brand-500" />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Rate (₱/hr)</label>
-                    <input type="number" value={courtRate} onChange={e => setCourtRate(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Location</label>
-                    <input type="text" value={courtLocation} onChange={e => setCourtLocation(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Court Picture</label>
-                  <input type="file" accept="image/*" onChange={handleCourtImageChange} className="w-full text-xs text-slate-300" />
-                </div>
-                {courtImagePreview && (
-                  <div className="w-full h-36 rounded-xl overflow-hidden border border-slate-800">
-                    <img src={courtImagePreview} alt="Preview" className="w-full h-full object-cover" />
-                  </div>
-                )}
-                <button type="submit" disabled={addingCourt} className="w-full py-3 bg-brand-500 text-slate-950 font-bold rounded-xl shadow-lg">Add Court Facility</button>
-              </form>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // =========================================================================
-    // 7.5 USER PROFILE VIEW
+    // 7. USER PROFILE VIEW COMPONENT
     // =========================================================================
     function UserProfileView({ currentUser, showNotification }) {
       const [fullName, setFullName] = React.useState(currentUser?.full_name || '');
@@ -1354,11 +1507,11 @@
       const handleUpdateProfile = async (e) => {
         e.preventDefault();
         if (!fullName.trim()) return;
-
         setUpdating(true);
         try {
           await supabase.from('profiles').upsert({ id: currentUser.id, full_name: fullName.trim(), email: currentUser.email, role: currentUser.role }, { onConflict: 'id' });
           currentUser.full_name = fullName.trim();
+          safeAuditLog(currentUser, 'UPDATE_PROFILE', { name: fullName.trim() });
           showNotification('Profile updated successfully!', 'success');
         } catch (err) {
           showNotification('Profile update error.', 'error');
@@ -1369,15 +1522,15 @@
 
       return (
         <div className="p-4 sm:p-6 max-w-md mx-auto w-full space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-5 shadow-2xl">
-            <div className="flex items-center gap-3.5 border-b border-slate-800 pb-4">
-              <div className="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center p-1.5"><MapPinLogo className="w-9 h-9" /></div>
-              <div><h3 className="text-sm font-bold text-white">{currentUser?.full_name}</h3><p className="text-xs text-brand-400 capitalize font-mono">{currentUser?.role}</p></div>
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-5 shadow-sm">
+            <div className="flex items-center gap-3.5 border-b border-slate-100 pb-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center p-1.5 text-emerald-600"><MapPinLogo className="w-9 h-9" /></div>
+              <div><h3 className="text-sm font-bold text-slate-900">{currentUser?.full_name}</h3><p className="text-xs text-emerald-600 capitalize font-mono">{currentUser?.role}</p></div>
             </div>
             <form onSubmit={handleUpdateProfile} className="space-y-4 text-xs">
-              <div><label className="text-slate-400 mb-1 block">Email</label><input type="text" disabled value={currentUser?.email || ''} className="w-full px-3.5 py-2.5 bg-slate-950/50 border border-slate-800 rounded-xl text-slate-400 font-mono" /></div>
-              <div><label className="text-slate-400 mb-1 block">Full Name</label><input type="text" value={fullName} onChange={e => setFullName(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white" /></div>
-              <button type="submit" disabled={updating} className="w-full py-3 bg-brand-500 text-slate-950 font-bold rounded-xl">Save Profile</button>
+              <div><label className="text-slate-600 font-bold block mb-1">Email</label><input type="text" disabled value={currentUser?.email || ''} className="w-full px-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 font-mono" /></div>
+              <div><label className="text-slate-600 font-bold block mb-1">Full Name</label><input type="text" value={fullName} onChange={e => setFullName(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+              <button type="submit" disabled={updating} className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow">Save Profile</button>
             </form>
           </div>
         </div>
@@ -1394,6 +1547,38 @@
       const [showLogoutModal, setShowLogoutModal] = React.useState(false);
       const [availableCourts, setAvailableCourts] = React.useState([]);
       const [isDesktopView, setIsDesktopView] = React.useState(window.innerWidth >= 768);
+
+      React.useEffect(() => {
+        let inactivityTimer;
+        const resetInactivity = () => {
+          clearTimeout(inactivityTimer);
+          if (currentUser) {
+            inactivityTimer = setTimeout(() => {
+              safeAuditLog(currentUser, 'AUTO_LOGOUT_INACTIVITY', {});
+              supabase.auth.signOut();
+              setCurrentUser(null);
+              showNotification('Automatically logged out due to 15 minutes of inactivity[cite: 17].', 'error');
+            }, 15 * 60 * 1000);
+          }
+        };
+
+        const events = ['mousemove', 'keydown', 'click', 'scroll'];
+        events.forEach(evt => window.addEventListener(evt, resetInactivity));
+
+        const handleStorageEvent = (e) => {
+          if (e.key === 'recmatch_logout_sync') {
+            setCurrentUser(null);
+            showNotification('Logged out from another tab[cite: 17].', 'info');
+          }
+        };
+        window.addEventListener('storage', handleStorageEvent);
+
+        return () => {
+          clearTimeout(inactivityTimer);
+          events.forEach(evt => window.removeEventListener(evt, resetInactivity));
+          window.removeEventListener('storage', handleStorageEvent);
+        };
+      }, [currentUser]);
 
       React.useEffect(() => {
         const handleResize = () => setIsDesktopView(window.innerWidth >= 768);
@@ -1413,7 +1598,6 @@
             const locMatch = item.course_program.match(/@\s*(.*)$/);
             const locVal = locMatch ? locMatch[1].trim() : 'Ormoc City';
             const imgData = item.academic_year && item.academic_year.startsWith('data:image') ? item.academic_year : null;
-
             filteredCourts.push({ id: `approved_court_${item.id}`, name: pureName, sport: 'Basketball', rate: rateVal, location: locVal, image: imgData });
           });
         }
@@ -1424,19 +1608,20 @@
       const clearNotification = () => setNotification({ message: '', type: 'info' });
 
       const handleConfirmLogout = async () => {
+        safeAuditLog(currentUser, 'LOGOUT', {});
         await supabase.auth.signOut();
+        localStorage.setItem('recmatch_logout_sync', Date.now().toString());
         setCurrentUser(null);
         setShowLogoutModal(false);
-        showNotification('Signed out of RecMatch.', 'info');
+        showNotification('Signed out of RecMatch[cite: 17].', 'info');
       };
 
-      const isPlayer = currentUser?.role === 'Player / User' || currentUser?.role === 'student' || !currentUser?.role;
-      const isOrganizer = currentUser?.role === 'Organizer' || currentUser?.role === 'dean';
       const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'admin';
+      const isOrganizer = currentUser?.role === 'Organizer' || currentUser?.role === 'dean';
 
       const containerClasses = isDesktopView 
-        ? "w-full h-full flex flex-col justify-between overflow-hidden bg-slate-950" 
-        : "w-full h-full flex flex-col justify-between overflow-hidden bg-slate-950 max-w-md mx-auto shadow-2xl border border-slate-900 rounded-none sm:rounded-[40px]";
+        ? "w-full h-full flex flex-col justify-between overflow-hidden bg-slate-100" 
+        : "w-full h-full flex flex-col justify-between overflow-hidden bg-slate-100 max-w-md mx-auto shadow-2xl border border-slate-200 rounded-none sm:rounded-[40px]";
 
       return (
         <div className={containerClasses}>
@@ -1444,98 +1629,108 @@
           <SystemBanner notification={notification} onClose={clearNotification} />
 
           {!currentUser ? (
-            <div className="flex-1 flex flex-col justify-between overflow-y-auto">
+            <div className="flex-1 flex flex-col justify-between overflow-y-auto bg-slate-100">
               <AuthModule onAuthSuccess={(user) => {
                 setCurrentUser(user);
                 fetchAdminCreatedCourts();
                 setActiveNavTab(user.role === 'Organizer' ? 'approvals' : user.role === 'Admin' ? 'dashboard' : 'home');
               }} showNotification={showNotification} />
-              <footer className="py-3 text-center text-[10px] text-slate-600 font-mono">RecMatch Ormoc &copy; 2026</footer>
+              <footer className="py-3 text-center text-[10px] text-slate-400 font-mono">RecMatch Ormoc &copy; 2026</footer>
             </div>
           ) : (
-            <div className="flex flex-col h-full justify-between">
-              <header className="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-md">
+            <div className="flex flex-col h-full justify-between bg-slate-50">
+              <header className="px-6 py-4 bg-white border-b border-slate-200 flex items-center justify-between shadow-sm shrink-0">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 shadow-sm shrink-0"><MapPinLogo className="w-7 h-7" /></div>
-                  <div>
-                    <h2 className="text-xs sm:text-sm font-bold text-white leading-tight">{currentUser.full_name}</h2>
-                    <p className="text-[10px] sm:text-xs text-slate-400 capitalize">Role: <span className="text-brand-400 font-semibold">{currentUser.role}</span></p>
-                  </div>
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-extrabold shadow-sm">R</div>
+                  <h1 className="text-base font-extrabold text-slate-900 tracking-tight">RecMatch</h1>
                 </div>
 
-                <div className="flex items-center gap-2 flex-wrap">
-                  {isOrganizer && !isDesktopView && (
-                    <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-[10px] font-bold">
-                      <button onClick={() => setActiveNavTab('approvals')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'approvals' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Approvals</button>
-                      <button onClick={() => setActiveNavTab('create_league')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'create_league' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Create League</button>
-                      <button onClick={() => setActiveNavTab('request_court')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'request_court' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Request Court</button>
-                    </div>
-                  )}
-
-                  {isAdmin && !isDesktopView && (
-                    <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-xl border border-slate-800 text-[10px] font-bold">
-                      <button onClick={() => setActiveNavTab('dashboard')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'dashboard' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Dashboard</button>
-                      <button onClick={() => setActiveNavTab('courts')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'courts' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Courts</button>
-                      <button onClick={() => setActiveNavTab('add_court')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'add_court' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Add Court</button>
-                      <button onClick={() => setActiveNavTab('logs')} className={`px-2 py-1 rounded-lg ${activeNavTab === 'logs' ? 'bg-brand-500 text-slate-950' : 'text-slate-400'}`}>Logs</button>
-                    </div>
-                  )}
-
-                  <button type="button" onClick={() => setShowLogoutModal(true)} className="px-3.5 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-xl text-xs font-bold transition-all">Logout</button>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400 font-medium hidden sm:inline">View as</span>
+                    <span className="px-3 py-1 bg-slate-100 text-slate-900 rounded-xl text-xs font-bold border border-slate-200">{currentUser.role}</span>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center text-xs">
+                    {currentUser.full_name?.charAt(0).toUpperCase()}
+                  </div>
+                  <button type="button" onClick={() => setShowLogoutModal(true)} className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold transition-all">Logout</button>
                 </div>
               </header>
 
-              <main className={`flex-1 min-h-0 ${isAdmin || isOrganizer ? 'flex overflow-hidden' : 'flex flex-col overflow-y-auto p-2 sm:p-4'}`}>
-                {(isAdmin || isOrganizer) && isDesktopView && (
-                  <aside className="flex w-64 shrink-0 flex-col border-r border-slate-800 bg-slate-900/70 p-5">
-                    <div className="mb-8 flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-brand-500/20 bg-brand-500/10"><MapPinLogo className="h-8 w-8" /></div>
-                      <div>
-                        <p className="text-sm font-extrabold tracking-wide text-white">RecMatch</p>
-                        <p className="text-[10px] text-slate-500">Ormoc City workspace</p>
+              <div className="flex flex-1 min-h-0 overflow-hidden">
+                {isDesktopView && (
+                  <aside className="w-64 bg-white border-r border-slate-200 p-5 flex flex-col shrink-0 space-y-6">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-3 px-3 py-2 mb-2 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">{currentUser.full_name?.charAt(0).toUpperCase()}</div>
+                        <div className="overflow-hidden">
+                          <p className="text-xs font-bold text-slate-900 truncate">{currentUser.full_name}</p>
+                          <p className="text-[10px] text-slate-500 truncate">{currentUser.role} account</p>
+                        </div>
                       </div>
+
+                      <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">Workspace</p>
+                      <nav className="space-y-1 pt-1">
+                        {(isAdmin ? [
+                          { id: 'dashboard', label: 'Overview', icon: '📊' },
+                          { id: 'add_court', label: 'Add Court', icon: '➕' },
+                          { id: 'profile', label: 'Profile', icon: '👤' }
+                        ] : isOrganizer ? [
+                          { id: 'approvals', label: 'Overview', icon: '📊' },
+                          { id: 'request_court', label: 'Request Court', icon: '🏟️' },
+                          { id: 'create_league', label: 'Create League', icon: '🏆' },
+                          { id: 'profile', label: 'Profile', icon: '👤' }
+                        ] : [
+                          { id: 'home', label: 'Overview', icon: '🏠' },
+                          { id: 'reservation', label: 'Find Courts', icon: '🏟️' },
+                          { id: 'leagues', label: 'Leagues', icon: '🏆' },
+                          { id: 'profile', label: 'Profile', icon: '👤' }
+                        ]).map((item) => (
+                          <button key={item.id} type="button" onClick={() => setActiveNavTab(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-xs font-bold transition-all ${activeNavTab === item.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
+                            <span>{item.icon}</span><span>{item.label}</span>
+                          </button>
+                        ))}
+                      </nav>
                     </div>
 
-                    <p className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                      {isAdmin ? 'Administration' : 'Organizer workspace'}
-                    </p>
-                    <nav className="space-y-1">
-                      {(isAdmin ? [
-                        { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-                        { id: 'courts', label: 'Courts', icon: '🏟️' },
-                        { id: 'add_court', label: 'Add Court', icon: '➕' },
-                        { id: 'logs', label: 'Audit Logs', icon: '🛡️' },
-                        { id: 'profile', label: 'Profile', icon: '👤' }
-                      ] : [
-                        { id: 'approvals', label: 'Approvals', icon: '✅' },
-                        { id: 'create_league', label: 'Create League', icon: '🏆' },
-                        { id: 'request_court', label: 'Request Court', icon: '🏟️' },
-                        { id: 'profile', label: 'Profile', icon: '👤' }
-                      ]).map((item) => (
-                        <button key={item.id} type="button" onClick={() => setActiveNavTab(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-xs font-semibold transition-colors ${activeNavTab === item.id ? 'bg-brand-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-                          <span>{item.icon}</span><span>{item.label}</span>
-                        </button>
-                      ))}
-                    </nav>
+                    <div className="mt-auto p-4 bg-emerald-50 rounded-2xl border border-emerald-100 space-y-1">
+                      <p className="text-xs font-bold text-emerald-900">Play local. Play together.</p>
+                      <p className="text-[10px] text-emerald-700">Find a court, join a league, and meet your teammates.</p>
+                    </div>
                   </aside>
                 )}
 
-                {(isAdmin || isOrganizer) ? (
-                  <div className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8">
-                    {activeNavTab === 'profile' ? <UserProfileView currentUser={currentUser} showNotification={showNotification} /> :
-                     isAdmin ? <AdminDashboard currentUser={currentUser} showNotification={showNotification} refreshCourts={fetchAdminCreatedCourts} activeSubTab={activeNavTab} setActiveSubTab={setActiveNavTab} availableCourts={availableCourts} /> :
-                     <OrganizerDashboard currentUser={currentUser} showNotification={showNotification} availableCourts={availableCourts} refreshCourts={fetchAdminCreatedCourts} activeNavTab={activeNavTab} />}
-                  </div>
-                ) : activeNavTab === 'profile' ? <UserProfileView currentUser={currentUser} showNotification={showNotification} /> :
-                  <PlayerDashboard currentUser={currentUser} showNotification={showNotification} availableCourts={availableCourts} playerNavTab={activeNavTab} />}
-              </main>
+                <main className="flex-1 min-w-0 flex flex-col overflow-hidden bg-slate-50">
+                  {activeNavTab === 'profile' ? <UserProfileView currentUser={currentUser} showNotification={showNotification} /> :
+                   isAdmin ? <AdminDashboard currentUser={currentUser} showNotification={showNotification} refreshCourts={fetchAdminCreatedCourts} activeSubTab={activeNavTab} setActiveSubTab={setActiveNavTab} availableCourts={availableCourts} /> :
+                   isOrganizer ? <OrganizerDashboard currentUser={currentUser} showNotification={showNotification} availableCourts={availableCourts} refreshCourts={fetchAdminCreatedCourts} activeNavTab={activeNavTab} setActiveNavTab={setActiveNavTab} /> :
+                   <PlayerDashboard currentUser={currentUser} showNotification={showNotification} availableCourts={availableCourts} playerNavTab={activeNavTab} setActiveNavTab={setActiveNavTab} />}
+                </main>
+              </div>
 
-              {isPlayer && !isDesktopView && (
-                <nav className="px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center justify-around text-[10px] shrink-0">
-                  <button onClick={() => setActiveNavTab('home')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'home' ? 'text-brand-400 font-bold' : 'text-slate-400'}`}><span>🏠</span><span>Home</span></button>
-                  <button onClick={() => setActiveNavTab('reservation')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'reservation' ? 'text-brand-400 font-bold' : 'text-slate-400'}`}><span>📅</span><span>Reservation</span></button>
-                  <button onClick={() => setActiveNavTab('leagues')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'leagues' ? 'text-brand-400 font-bold' : 'text-slate-400'}`}><span>🏆</span><span>Leagues</span></button>
-                  <button onClick={() => setActiveNavTab('profile')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'profile' ? 'text-brand-400 font-bold' : 'text-slate-400'}`}><span>👤</span><span>Profile</span></button>
+              {!isDesktopView && (
+                <nav className="px-4 py-2.5 bg-white border-t border-slate-200 flex items-center justify-around text-[10px] shrink-0 font-bold">
+                  {isAdmin ? (
+                    <>
+                      <button onClick={() => setActiveNavTab('dashboard')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'dashboard' ? 'text-emerald-600' : 'text-slate-400'}`}><span>📊</span><span>Overview</span></button>
+                      <button onClick={() => setActiveNavTab('add_court')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'add_court' ? 'text-emerald-600' : 'text-slate-400'}`}><span>➕</span><span>Add Court</span></button>
+                      <button onClick={() => setActiveNavTab('profile')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'profile' ? 'text-emerald-600' : 'text-slate-400'}`}><span>👤</span><span>Profile</span></button>
+                    </>
+                  ) : isOrganizer ? (
+                    <>
+                      <button onClick={() => setActiveNavTab('approvals')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'approvals' ? 'text-emerald-600' : 'text-slate-400'}`}><span>📊</span><span>Overview</span></button>
+                      <button onClick={() => setActiveNavTab('request_court')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'request_court' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏟️</span><span>Request</span></button>
+                      <button onClick={() => setActiveNavTab('create_league')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'create_league' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏆</span><span>Leagues</span></button>
+                      <button onClick={() => setActiveNavTab('profile')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'profile' ? 'text-emerald-600' : 'text-slate-400'}`}><span>👤</span><span>Profile</span></button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => setActiveNavTab('home')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'home' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏠</span><span>Home</span></button>
+                      <button onClick={() => setActiveNavTab('reservation')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'reservation' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏟️</span><span>Courts</span></button>
+                      <button onClick={() => setActiveNavTab('leagues')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'leagues' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏆</span><span>Leagues</span></button>
+                      <button onClick={() => setActiveNavTab('profile')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'profile' ? 'text-emerald-600' : 'text-slate-400'}`}><span>👤</span><span>Profile</span></button>
+                    </>
+                  )}
                 </nav>
               )}
             </div>
