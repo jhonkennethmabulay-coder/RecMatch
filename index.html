@@ -273,6 +273,12 @@
         if (isLockedOut) { showNotification(`Account temporarily locked. Try again in ${lockoutTimer}s.`, 'error'); return; }
         if (!loginEmail.trim() || !loginPassword) { showNotification('Empty email or password field.', 'error'); return; }
         try {
+          let { data: checkProf } = await supabase.from('profiles').select('*').eq('email', loginEmail.trim()).maybeSingle();
+          if (checkProf && checkProf.status === 'Locked') {
+            showNotification('This account has been locked by the Administrator.', 'error');
+            return;
+          }
+
           const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
           if (error) {
             const nextAttempts = failedAttempts + 1;
@@ -289,6 +295,12 @@
           }
           setFailedAttempts(0);
           let { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle();
+          if (profile && profile.status === 'Locked') {
+            await supabase.auth.signOut();
+            showNotification('Access denied. Account is locked[cite: 17].', 'error');
+            return;
+          }
+
           let userRole = determineUserRole(loginEmail, profile?.role || data.user.user_metadata?.role);
           let userName = profile?.full_name || data.user.user_metadata?.full_name || loginEmail.split('@')[0];
           const loggedUser = { id: data.user.id, full_name: userName, email: loginEmail, role: userRole };
@@ -321,10 +333,10 @@
           const { data, error } = await supabase.auth.signUp({ email: pendingUserData.email, password: pendingUserData.password, options: { data: { full_name: pendingUserData.full_name, role: pendingUserData.role } } });
           if (error) { showNotification(error.message, 'error'); setRegLoading(false); return; }
           if (data?.user) {
-            await supabase.from('profiles').upsert({ id: data.user.id, full_name: pendingUserData.full_name, email: pendingUserData.email, role: pendingUserData.role }, { onConflict: 'id' });
+            await supabase.from('profiles').upsert({ id: data.user.id, full_name: pendingUserData.full_name, email: pendingUserData.email, role: pendingUserData.role, status: 'Active' }, { onConflict: 'id' });
           }
           safeAuditLog({ email: pendingUserData.email }, 'ACCOUNT_VERIFIED_AND_REGISTERED', {});
-          showNotification('Account verified and created successfully! Please sign in.', 'success');
+          showNotification('Account verified and created successfully! Please sign in[cite: 17].', 'success');
           setShowOtpModal(false);
           setActiveTab('login');
           setLoginEmail(pendingUserData.email);
@@ -354,7 +366,7 @@
       const handleFinalResetPassword = (e) => {
         e.preventDefault();
         if (!IAS_PASSWORD_REGEX.test(newPassword)) { showNotification('Password must have min 8 chars, uppercase, lowercase, number & special character[cite: 17].', 'error'); return; }
-        showNotification('Password successfully reset! Please sign in with your new password.', 'success');
+        showNotification('Password successfully reset! Please sign in with your new password[cite: 17].', 'success');
         safeAuditLog({ email: forgotEmail }, 'PASSWORD_RESET_SUCCESS', {});
         setShowForgotModal(false);
         setForgotStep(1);
@@ -490,11 +502,14 @@
     }
 
     // =========================================================================
-    // 4. ADMIN MANAGEMENT DESK
+    // 4. ADMIN MANAGEMENT DESK (Interactive Summary Cards)
     // =========================================================================
     function AdminDashboard({ currentUser, showNotification, refreshCourts, activeSubTab, setActiveSubTab, availableCourts }) {
       const [pendingProposals, setPendingProposals] = React.useState([]);
       const [auditLogs, setAuditLogs] = React.useState([]);
+      const [usersList, setUsersList] = React.useState([]);
+      const [userSearchQuery, setUserSearchQuery] = React.useState('');
+
       const [approvingItem, setApprovingItem] = React.useState(null);
       const [adminEndTime, setAdminEndTime] = React.useState('18:00');
       const [courtName, setCourtName] = React.useState('');
@@ -506,6 +521,7 @@
       React.useEffect(() => {
         fetchProposals();
         fetchAuditLogs();
+        fetchUsersList();
       }, []);
 
       const fetchProposals = async () => {
@@ -516,6 +532,34 @@
       const fetchAuditLogs = async () => {
         const { data } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(50);
         setAuditLogs(data || []);
+      };
+
+      const fetchUsersList = async () => {
+        const { data } = await supabase.from('profiles').select('*').order('full_name', { ascending: true });
+        setUsersList(data || []);
+      };
+
+      const handleUpdateUserRole = async (userId, newRole) => {
+        const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+        if (error) {
+          showNotification(`Failed to update role: ${error.message}`, 'error');
+        } else {
+          safeAuditLog(currentUser, 'ADMIN_UPDATE_USER_ROLE', { userId, newRole });
+          showNotification('User role updated successfully[cite: 17]!', 'success');
+          fetchUsersList();
+        }
+      };
+
+      const handleToggleUserStatus = async (userId, currentStatus) => {
+        const nextStatus = currentStatus === 'Locked' ? 'Active' : 'Locked';
+        const { error } = await supabase.from('profiles').update({ status: nextStatus }).eq('id', userId);
+        if (error) {
+          showNotification(`Failed to change status: ${error.message}`, 'error');
+        } else {
+          safeAuditLog(currentUser, 'ADMIN_TOGGLE_USER_LOCK', { userId, status: nextStatus });
+          showNotification(`User account status changed to ${nextStatus}[cite: 17]!`, 'success');
+          fetchUsersList();
+        }
       };
 
       const handleCourtImageChange = (e) => {
@@ -604,9 +648,18 @@
         reader.readAsText(file);
       };
 
-      const activeLeaguesCount = pendingProposals.filter(p => p.course_program?.includes('LEAGUE:') && (p.status === 'Approved' || p.status === 'dean_approved')).length;
-      const totalBookingsCount = pendingProposals.filter(p => !p.course_program?.includes('NEW COURT PROPOSAL') && !p.course_program?.includes('LEAGUE')).length;
-      const pendingReviewCount = pendingProposals.filter(p => p.status === 'Pending' || p.status === 'submitted').length;
+      const filteredUsers = usersList.filter(u => 
+        (u.full_name && u.full_name.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
+        (u.email && u.email.toLowerCase().includes(userSearchQuery.toLowerCase())) ||
+        (u.role && u.role.toLowerCase().includes(userSearchQuery.toLowerCase()))
+      );
+
+      const activeLeaguesList = pendingProposals.filter(p => p.course_program?.includes('LEAGUE:') && (p.status === 'Approved' || p.status === 'dean_approved'));
+      const activeLeaguesCount = activeLeaguesList.length;
+      const totalBookingsList = pendingProposals.filter(p => !p.course_program?.includes('NEW COURT PROPOSAL') && !p.course_program?.includes('LEAGUE'));
+      const totalBookingsCount = totalBookingsList.length;
+      const pendingReviewList = pendingProposals.filter(p => p.status === 'Pending' || p.status === 'submitted');
+      const pendingReviewCount = pendingReviewList.length;
 
       return (
         <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
@@ -642,14 +695,62 @@
                 <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
               <form onSubmit={handleAddCourt} className="space-y-4 text-xs">
-                <div><label className="block text-xs font-bold text-slate-700 mb-1">Court Name</label><input type="text" value={courtName} onChange={(e) => setCourtName(e.target.value)} placeholder="SuperDome" className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                <div><label className="block text-xs font-bold text-slate-700 mb-1">Court Name</label><input type="text" value={courtName} onChange={e => setCourtName(e.target.value)} placeholder="SuperDome" className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="block text-xs font-bold text-slate-700 mb-1">Rate (₱/hr)</label><input type="number" value={courtRate} onChange={(e) => setCourtRate(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
-                  <div><label className="block text-xs font-bold text-slate-700 mb-1">Location</label><input type="text" value={courtLocation} onChange={(e) => setCourtLocation(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                  <div><label className="block text-xs font-bold text-slate-700 mb-1">Rate (₱/hr)</label><input type="number" value={courtRate} onChange={e => setCourtRate(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                  <div><label className="block text-xs font-bold text-slate-700 mb-1">Location</label><input type="text" value={courtLocation} onChange={e => setCourtLocation(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
                 </div>
                 <div><label className="block text-xs font-bold text-slate-700 mb-1">Court Picture</label><input type="file" accept="image/*" onChange={handleCourtImageChange} className="w-full text-xs text-slate-500" /></div>
                 <button type="submit" disabled={addingCourt} className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow">Add Court Facility</button>
               </form>
+            </div>
+          ) : activeSubTab === 'users_desk' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">👥 Admin User Management Desk</h3>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <input type="text" value={userSearchQuery} onChange={e => setUserSearchQuery(e.target.value)} placeholder="Search by name, email, role..." className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 w-full sm:w-64" />
+                  <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+                </div>
+              </div>
+              <div className="overflow-x-auto max-h-[420px]">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 font-bold text-[10px]">
+                      <th className="pb-3">FULL NAME</th>
+                      <th className="pb-3">EMAIL</th>
+                      <th className="pb-3">ROLE</th>
+                      <th className="pb-3">STATUS</th>
+                      <th className="pb-3 text-right">ACTIONS</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredUsers.map(u => (
+                      <tr key={u.id} className="hover:bg-slate-50/50">
+                        <td className="py-3 font-bold text-slate-900">{u.full_name || 'Unnamed'}</td>
+                        <td className="py-3 text-slate-600 font-mono text-[11px]">{u.email}</td>
+                        <td className="py-3">
+                          <select value={u.role || 'Player / User'} onChange={e => handleUpdateUserRole(u.id, e.target.value)} className="px-2 py-1 bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800">
+                            <option value="Player / User">Player / User</option>
+                            <option value="Organizer">Organizer</option>
+                            <option value="Admin">Admin</option>
+                          </select>
+                        </td>
+                        <td className="py-3">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${u.status === 'Locked' ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'}`}>
+                            {u.status || 'Active'}
+                          </span>
+                        </td>
+                        <td className="py-3 text-right">
+                          <button onClick={() => handleToggleUserStatus(u.id, u.status)} className={`px-3 py-1.5 rounded-xl font-bold text-[11px] shadow ${u.status === 'Locked' ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'bg-red-600 text-white hover:bg-red-500'}`}>
+                            {u.status === 'Locked' ? 'Unlock Account' : 'Lock Account'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : activeSubTab === 'logs' ? (
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
@@ -701,6 +802,103 @@
                 </div>
               </div>
             </div>
+          ) : activeSubTab === 'courts_view' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🏟️ Total Courts Directory ({availableCourts.length})</h3>
+                <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              {availableCourts.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">Wala pang nakatalang korte.</p>
+              ) : (
+                <div className="space-y-3">
+                  {availableCourts.map(c => (
+                    <div key={c.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-slate-900 text-sm">{c.name}</p>
+                        <p className="text-xs text-slate-500">📍 {c.location} • <span className="text-emerald-600 font-semibold">₱{c.rate}/hr</span></p>
+                      </div>
+                      <span className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full text-xs font-bold">Active</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : activeSubTab === 'leagues_view' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🏆 Active Leagues ({activeLeaguesList.length})</h3>
+                <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              {activeLeaguesList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">Wala pang active na liga sa ngayon.</p>
+              ) : (
+                <div className="space-y-3">
+                  {activeLeaguesList.map(l => (
+                    <div key={l.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-slate-900 text-xs">{l.course_program}</p>
+                        <p className="text-[11px] text-emerald-600 font-mono mt-0.5">📅 Schedule: {formatScheduleTo12Hour(l.semester)}</p>
+                      </div>
+                      <StatusBadge status={l.status} scheduleStr={l.semester} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : activeSubTab === 'bookings_view' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🗓️ Total Bookings & Reservations ({totalBookingsList.length})</h3>
+                <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              {totalBookingsList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">Wala pang booking records.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-400 font-bold text-[10px]">
+                        <th className="pb-3">COURT / PLAYER</th>
+                        <th className="pb-3">DATE & TIME</th>
+                        <th className="pb-3">STATUS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {totalBookingsList.map(b => (
+                        <tr key={b.id} className="hover:bg-slate-50/50">
+                          <td className="py-3 font-bold text-slate-900">{b.course_program}</td>
+                          <td className="py-3 text-emerald-600 font-mono text-[11px]">{formatScheduleTo12Hour(b.semester)}</td>
+                          <td className="py-3"><StatusBadge status={b.status} scheduleStr={b.semester} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : activeSubTab === 'pending_view' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">⌛ Pending Review & Moderation ({pendingReviewList.length})</h3>
+                <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              {pendingReviewList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">Walang pending review o kailangang i-moderate.</p>
+              ) : (
+                <div className="space-y-3">
+                  {pendingReviewList.map(p => (
+                    <div key={p.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-slate-900 text-xs">{p.course_program}</p>
+                        <p className="text-[11px] text-amber-600 font-mono mt-0.5">📅 {formatScheduleTo12Hour(p.semester)}</p>
+                      </div>
+                      <button onClick={() => setApprovingItem(p)} className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl text-xs shadow">Review / Confirm</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -710,29 +908,31 @@
                   <p className="text-xs text-slate-500">Monitor court listings, audit logs, and system backup.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setActiveSubTab('users_desk')} className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow">👥 User Management</button>
                   <button onClick={() => setActiveSubTab('backup')} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow">💾 Backup & Recovery</button>
                   <button onClick={() => setActiveSubTab('logs')} className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow">🛡️ Audit Logs</button>
                   <button onClick={() => setActiveSubTab('add_court')} className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow">+ Add court</button>
                 </div>
               </div>
 
+              {/* Interactive 4 Admin Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+                <div onClick={() => setActiveSubTab('courts_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 transition-all">
                   <p className="text-[11px] font-bold text-slate-400">Total courts</p>
                   <p className="text-2xl font-extrabold text-slate-900">{availableCourts.length}</p>
                   <p className="text-[10px] text-emerald-600">Listed in directory</p>
                 </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+                <div onClick={() => setActiveSubTab('leagues_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 transition-all">
                   <p className="text-[11px] font-bold text-slate-400">Active leagues</p>
                   <p className="text-2xl font-extrabold text-slate-900">{activeLeaguesCount}</p>
                   <p className="text-[10px] text-emerald-600">Community competitions</p>
                 </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+                <div onClick={() => setActiveSubTab('bookings_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 transition-all">
                   <p className="text-[11px] font-bold text-slate-400">Total bookings</p>
                   <p className="text-2xl font-extrabold text-slate-900">{totalBookingsCount}</p>
                   <p className="text-[10px] text-emerald-600">All reservation records</p>
                 </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1">
+                <div onClick={() => setActiveSubTab('pending_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 transition-all">
                   <p className="text-[11px] font-bold text-slate-400">Pending review</p>
                   <p className="text-2xl font-extrabold text-slate-900">{pendingReviewCount}</p>
                   <p className="text-[10px] text-amber-600">Leagues to moderate</p>
@@ -1127,7 +1327,7 @@
                   <div><label className="text-slate-600 font-bold">Representative Name</label><input type="text" value={repName} onChange={e => setRepName(e.target.value)} placeholder="Name" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
                   <div><label className="text-slate-600 font-bold">Contact Number</label><input type="text" value={repContact} onChange={e => setRepContact(e.target.value)} placeholder="09123456789" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
                   <div><label className="text-slate-600 font-bold mb-1 block">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setPaymentMethod('gcash')} className={`py-1.5 rounded-lg ${paymentMethod === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setPaymentMethod('cash')} className={`py-1.5 rounded-lg ${paymentMethod === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
-                  {paymentMethod === 'gcash' && <div><input type="text" value={gcashRef} onChange={e => setGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono text-xs" /></div>}
+                  {paymentMethod === 'gcash' && <div><input type="text" value={gcashRef} onChange={e => setGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono" /></div>}
                   <button type="submit" disabled={submittingLeague} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Confirm League Registration</button>
                 </form>
               </div>
@@ -1148,6 +1348,7 @@
       const [ligaFee, setLigaFee] = React.useState('500');
       const [reserveDate, setReserveDate] = React.useState(new Date().toISOString().split('T')[0]);
 
+      const [courtDatesMap, setCourtDatesMap] = React.useState({});
       const [selectedOrganizerCourt, setSelectedOrganizerCourt] = React.useState(null);
       const [calendarStartDate, setCalendarStartDate] = React.useState(new Date());
       const [allBookingsForMatrix, setAllBookingsForMatrix] = React.useState([]);
@@ -1194,17 +1395,42 @@
       const fetchOrganizerData = async () => {
         const { data: props } = await supabase.from('enrollments').select('*').eq('student_id', currentUser.id).order('submitted_at', { ascending: false });
         setMyProposals(props || []);
-        const approvedOrgCourts = (props || []).filter(item => {
+
+        const approvedOrgCourts = [];
+        const datesMapping = {};
+
+        (props || []).forEach(item => {
           const isApproved = item.status === 'Approved' || item.status === 'dean_approved';
-          const isCourtRequest = availableCourts.some(c => item.course_program.startsWith(c.name));
-          return isApproved && isCourtRequest;
-        }).map(item => {
           const matchCourt = availableCourts.find(c => item.course_program.startsWith(c.name));
-          return matchCourt ? matchCourt.name : item.course_program.split(' | ')[0];
+          if (isApproved && matchCourt) {
+            approvedOrgCourts.push(matchCourt.name);
+            if (item.semester) {
+              const dateMatch = item.semester.match(/\d{4}-\d{2}-\d{2}/);
+              if (dateMatch) {
+                datesMapping[matchCourt.name] = dateMatch[0];
+              }
+            }
+          }
         });
+
         const uniqueApprovedCourts = [...new Set(approvedOrgCourts)];
         setOrganizerApprovedCourts(uniqueApprovedCourts);
-        if (uniqueApprovedCourts.length > 0 && !selectedCourt) setSelectedCourt(uniqueApprovedCourts[0]);
+        setCourtDatesMap(datesMapping);
+
+        if (uniqueApprovedCourts.length > 0 && !selectedCourt) {
+          setSelectedCourt(uniqueApprovedCourts[0]);
+          if (datesMapping[uniqueApprovedCourts[0]]) {
+            setReserveDate(datesMapping[uniqueApprovedCourts[0]]);
+          }
+        }
+      };
+
+      const handleCourtChange = (e) => {
+        const chosenCourt = e.target.value;
+        setSelectedCourt(chosenCourt);
+        if (courtDatesMap[chosenCourt]) {
+          setReserveDate(courtDatesMap[chosenCourt]);
+        }
       };
 
       const handleCreateLiga = async (e) => {
@@ -1290,6 +1516,9 @@
       };
 
       const leaguesList = myProposals.filter(p => p.course_program?.includes('LEAGUE:'));
+      const myReservationsList = myProposals.filter(p => !p.course_program?.includes('NEW COURT PROPOSAL') && !p.course_program?.includes('LEAGUE:'));
+      const myPendingRequestsList = myReservationsList.filter(p => p.status === 'Pending' || p.status === 'submitted');
+      const myApprovedReservationsList = myReservationsList.filter(p => p.status === 'Approved' || p.status === 'dean_approved');
 
       return (
         <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
@@ -1315,7 +1544,7 @@
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Approved Court</label>
-                    <select value={selectedCourt} onChange={e => setSelectedCourt(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900">
+                    <select value={selectedCourt} onChange={handleCourtChange} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900">
                       {organizerApprovedCourts.length === 0 ? <option value="">No approved courts yet</option> : organizerApprovedCourts.map((cName, idx) => <option key={idx} value={cName}>{cName}</option>)}
                     </select>
                   </div>
@@ -1326,8 +1555,8 @@
                     <input type="number" value={ligaFee} onChange={e => setLigaFee(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Tournament Date</label>
-                    <input type="date" value={reserveDate} onChange={e => setReserveDate(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" />
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Tournament Date (Auto-filled)</label>
+                    <input type="date" value={reserveDate} onChange={e => setReserveDate(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" />
                   </div>
                 </div>
                 <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow">Publish League</button>
@@ -1353,10 +1582,54 @@
                 </div>
               )}
             </div>
+          ) : activeNavTab === 'reservations_view' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🗓️ My Approved Reservations</h3>
+                <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              {myApprovedReservationsList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">Wala ka pang na-approve na court reservation.</p>
+              ) : (
+                <div className="space-y-3">
+                  {myApprovedReservationsList.map(item => (
+                    <div key={item.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-slate-900 text-xs">🏟️ {item.course_program}</p>
+                        <p className="text-[11px] text-emerald-600 font-mono mt-0.5">📅 Schedule: {formatScheduleTo12Hour(item.semester)}</p>
+                      </div>
+                      <StatusBadge status={item.status} scheduleStr={item.semester} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : activeNavTab === 'pending_requests_view' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">⌛ My Pending Requests</h3>
+                <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              {myPendingRequestsList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">Wala kang kasalukuyang pending request.</p>
+              ) : (
+                <div className="space-y-3">
+                  {myPendingRequestsList.map(item => (
+                    <div key={item.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                      <div>
+                        <p className="font-bold text-slate-900 text-xs">🏟️ {item.course_program}</p>
+                        <p className="text-[11px] text-amber-600 font-mono mt-0.5">📅 Schedule: {formatScheduleTo12Hour(item.semester)}</p>
+                      </div>
+                      <StatusBadge status={item.status} scheduleStr={item.semester} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1 relative">
+                <div onClick={() => setActiveNavTab('request_court')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 relative transition-all">
                   <div className="flex justify-between items-start">
                     <p className="text-[11px] font-bold text-slate-400">Court listings</p>
                     <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs">📍</span>
@@ -1364,7 +1637,7 @@
                   <p className="text-2xl font-extrabold text-slate-900">{availableCourts.length}</p>
                   <p className="text-[10px] text-emerald-600">Across your community</p>
                 </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1 relative">
+                <div onClick={() => setActiveNavTab('create_league')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 relative transition-all">
                   <div className="flex justify-between items-start">
                     <p className="text-[11px] font-bold text-slate-400">Active leagues</p>
                     <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs">🏆</span>
@@ -1372,21 +1645,21 @@
                   <p className="text-2xl font-extrabold text-slate-900">{myProposals.length}</p>
                   <p className="text-[10px] text-emerald-600">Published and in review</p>
                 </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1 relative">
+                <div onClick={() => setActiveNavTab('reservations_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 relative transition-all">
                   <div className="flex justify-between items-start">
                     <p className="text-[11px] font-bold text-slate-400">Reservations</p>
                     <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs">🗓️</span>
                   </div>
-                  <p className="text-2xl font-extrabold text-slate-900">3</p>
-                  <p className="text-[10px] text-emerald-600">All player bookings</p>
+                  <p className="text-2xl font-extrabold text-slate-900">{myApprovedReservationsList.length}</p>
+                  <p className="text-[10px] text-emerald-600">Your approved court bookings</p>
                 </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-1 relative">
+                <div onClick={() => setActiveNavTab('pending_requests_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 relative transition-all">
                   <div className="flex justify-between items-start">
                     <p className="text-[11px] font-bold text-slate-400">Pending requests</p>
                     <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs">⌛</span>
                   </div>
-                  <p className="text-2xl font-extrabold text-slate-900">2</p>
-                  <p className="text-[10px] text-emerald-600">Need your attention</p>
+                  <p className="text-2xl font-extrabold text-slate-900">{myPendingRequestsList.length}</p>
+                  <p className="text-[10px] text-amber-600">Awaiting admin review</p>
                 </div>
               </div>
 
@@ -1487,7 +1760,7 @@
                   <div><label className="text-slate-600 font-bold block mb-1">Organizer Name</label><input type="text" value={orgResName} onChange={e => setOrgResName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
                   <div><label className="text-slate-600 font-bold block mb-1">Contact Number</label><input type="text" value={orgResContact} onChange={e => setOrgResContact(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
                   <div><label className="text-slate-600 font-bold block mb-1">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setOrgResPayment('gcash')} className={`py-1.5 rounded-lg ${orgResPayment === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setOrgResPayment('cash')} className={`py-1.5 rounded-lg ${orgResPayment === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
-                  {orgResPayment === 'gcash' && <div><input type="text" value={orgResGcashRef} onChange={e => setOrgResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono text-xs" /></div>}
+                  {orgResPayment === 'gcash' && <div><input type="text" value={orgResGcashRef} onChange={e => setOrgResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono" /></div>}
                   <button type="submit" disabled={submittingOrganizerBooking} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Submit Request</button>
                 </form>
               </div>
@@ -1673,6 +1946,7 @@
                       <nav className="space-y-1 pt-1">
                         {(isAdmin ? [
                           { id: 'dashboard', label: 'Overview', icon: '📊' },
+                          { id: 'users_desk', label: 'User Management', icon: '👥' },
                           { id: 'add_court', label: 'Add Court', icon: '➕' },
                           { id: 'profile', label: 'Profile', icon: '👤' }
                         ] : isOrganizer ? [
@@ -1713,6 +1987,7 @@
                   {isAdmin ? (
                     <>
                       <button onClick={() => setActiveNavTab('dashboard')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'dashboard' ? 'text-emerald-600' : 'text-slate-400'}`}><span>📊</span><span>Overview</span></button>
+                      <button onClick={() => setActiveNavTab('users_desk')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'users_desk' ? 'text-emerald-600' : 'text-slate-400'}`}><span>👥</span><span>Users</span></button>
                       <button onClick={() => setActiveNavTab('add_court')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'add_court' ? 'text-emerald-600' : 'text-slate-400'}`}><span>➕</span><span>Add Court</span></button>
                       <button onClick={() => setActiveNavTab('profile')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'profile' ? 'text-emerald-600' : 'text-slate-400'}`}><span>👤</span><span>Profile</span></button>
                     </>
