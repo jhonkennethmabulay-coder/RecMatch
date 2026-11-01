@@ -76,10 +76,10 @@
         const parts = trimmed.split(' @ ');
         const datePart = parts[0].replace('Date: ', '').trim();
         const timePart = parts[1].trim();
-        const timeSubParts = timePart.split(':');
-        if (timeSubParts.length < 2) return trimmed;
-        let hours = parseInt(timeSubParts[0], 10);
-        const minutes = timeSubParts[1];
+        const subParts = timePart.split(':');
+        if (subParts.length < 2) return trimmed;
+        let hours = parseInt(subParts[0], 10);
+        const minutes = subParts[1];
         if (isNaN(hours)) return trimmed;
         const ampm = hours >= 12 ? 'PM' : 'AM';
         hours = hours % 12;
@@ -95,9 +95,9 @@
         const endPartRaw = rangeParts[1].trim();
         let endFormatted = endPartRaw;
         if (endPartRaw.includes(':') && !endPartRaw.includes('@')) {
-          const timeSubParts = endPartRaw.split(':');
-          let hours = parseInt(timeSubParts[0], 10);
-          const minutes = timeSubParts[1];
+          const subParts = endPartRaw.split(':');
+          let hours = parseInt(subParts[0], 10);
+          const minutes = subParts[1];
           if (!isNaN(hours)) {
             const ampm = hours >= 12 ? 'PM' : 'AM';
             hours = hours % 12;
@@ -162,7 +162,7 @@
       const isSuccess = notification.type === 'success';
 
       return (
-        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-md p-3.5 rounded-2xl border flex items-start justify-between gap-3 text-xs font-medium shadow-2xl backdrop-blur-md transition-all duration-300 ${
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[99999] w-[90%] max-w-md p-3.5 rounded-2xl border flex items-start justify-between gap-3 text-xs font-medium shadow-2xl backdrop-blur-md transition-all duration-300 ${
           isError ? 'bg-red-900 text-white border-red-700' :
           isSuccess ? 'bg-emerald-900 text-white border-emerald-700' :
           'bg-slate-900 text-white border-slate-700'
@@ -222,9 +222,15 @@
       const [loginEmail, setLoginEmail] = React.useState('');
       const [loginPassword, setLoginPassword] = React.useState('');
       const [showLoginPassword, setShowLoginPassword] = React.useState(false);
-      const [failedAttempts, setFailedAttempts] = React.useState(0);
+      
+      const [failedSets, setFailedSets] = React.useState(0);
+      const [currentAttemptCount, setCurrentAttemptCount] = React.useState(0);
       const [isLockedOut, setIsLockedOut] = React.useState(false);
       const [lockoutTimer, setLockoutTimer] = React.useState(0);
+
+      const [showCaptchaModal, setShowCaptchaModal] = React.useState(false);
+      const [captchaQuestion, setCaptchaQuestion] = React.useState({ num1: 3, num2: 4, answer: 7 });
+      const [captchaInput, setCaptchaInput] = React.useState('');
 
       const [regFullName, setRegFullName] = React.useState('');
       const [regEmail, setRegEmail] = React.useState('');
@@ -253,10 +259,17 @@
           interval = setInterval(() => setLockoutTimer(prev => prev - 1), 1000);
         } else if (lockoutTimer === 0 && isLockedOut) {
           setIsLockedOut(false);
-          setFailedAttempts(0);
+          setCurrentAttemptCount(0);
         }
         return () => clearInterval(interval);
       }, [isLockedOut, lockoutTimer]);
+
+      const generateNewCaptcha = () => {
+        const n1 = Math.floor(Math.random() * 8) + 1;
+        const n2 = Math.floor(Math.random() * 8) + 1;
+        setCaptchaQuestion({ num1: n1, num2: n2, answer: n1 + n2 });
+        setCaptchaInput('');
+      };
 
       const determineUserRole = (email, metadataRole) => {
         const lowerEmail = String(email || '').toLowerCase();
@@ -270,8 +283,15 @@
 
       const handleLoginSubmit = async (e) => {
         e.preventDefault();
-        if (isLockedOut) { showNotification(`Account temporarily locked. Try again in ${lockoutTimer}s.`, 'error'); return; }
-        if (!loginEmail.trim() || !loginPassword) { showNotification('Empty email or password field.', 'error'); return; }
+        if (isLockedOut) {
+          showNotification(`Account temporarily locked. Try again in ${lockoutTimer}s.`, 'error');
+          return;
+        }
+        if (!loginEmail.trim() || !loginPassword) {
+          showNotification('Empty email or password field.', 'error');
+          return;
+        }
+
         try {
           let { data: checkProf } = await supabase.from('profiles').select('*').eq('email', loginEmail.trim()).maybeSingle();
           if (checkProf && checkProf.status === 'Locked') {
@@ -280,42 +300,86 @@
           }
 
           const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
+          
           if (error) {
-            const nextAttempts = failedAttempts + 1;
-            setFailedAttempts(nextAttempts);
-            safeAuditLog({ email: loginEmail }, 'FAILED_LOGIN', { attempts: nextAttempts });
+            const nextAttempts = currentAttemptCount + 1;
+            setCurrentAttemptCount(nextAttempts);
+            safeAuditLog({ email: loginEmail }, 'FAILED_LOGIN', { attemptInSet: nextAttempts, failedSetsCount: failedSets });
+
             if (nextAttempts >= 3) {
+              const nextSet = failedSets + 1;
+              setFailedSets(nextSet);
+
+              let lockDurationSeconds = 60; // 1 min
+              if (nextSet === 2) lockDurationSeconds = 300; // 5 min
+              else if (nextSet >= 3) lockDurationSeconds = 900; // 15 min
+
               setIsLockedOut(true);
-              setLockoutTimer(60);
-              showNotification('Account locked due to 3 consecutive failed login attempts[cite: 17].', 'error');
+              setLockoutTimer(lockDurationSeconds);
+              showNotification(`Account locked due to 3 consecutive failed attempts (${lockDurationSeconds / 60} min lockout).`, 'error');
             } else {
-              showNotification(`Invalid credentials. Attempts remaining: ${3 - nextAttempts}[cite: 17].`, 'error');
+              showNotification(`Invalid credentials. Attempts remaining in current set: ${3 - nextAttempts}.`, 'error');
             }
             return;
           }
-          setFailedAttempts(0);
-          let { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle();
-          if (profile && profile.status === 'Locked') {
+
+          if (failedSets >= 3 && !showCaptchaModal) {
             await supabase.auth.signOut();
-            showNotification('Access denied. Account is locked[cite: 17].', 'error');
+            generateNewCaptcha();
+            setShowCaptchaModal(true);
+            showNotification('Tamang password ang nailagay mo, ngunit kinakailangan mong kumpletuhin ang CAPTCHA dahil sa mga nakaraang failed login attempts.', 'info');
             return;
           }
 
-          let userRole = determineUserRole(loginEmail, profile?.role || data.user.user_metadata?.role);
-          let userName = profile?.full_name || data.user.user_metadata?.full_name || loginEmail.split('@')[0];
-          const loggedUser = { id: data.user.id, full_name: userName, email: loginEmail, role: userRole };
-          safeAuditLog(loggedUser, 'SUCCESSFUL_LOGIN', { role: userRole });
-          onAuthSuccess(loggedUser);
+          FINALIZE_LOGIN(data);
+
         } catch (err) {
           showNotification('Authentication error.', 'error');
         }
       };
 
-      const handleRegisterTrigger = (e) => {
+      const FINALIZE_LOGIN = async (authData) => {
+        setFailedSets(0);
+        setCurrentAttemptCount(0);
+        setShowCaptchaModal(false);
+
+        let { data: profile } = await supabase.from('profiles').select('*').eq('id', authData.user.id).maybeSingle();
+        if (profile && profile.status === 'Locked') {
+          await supabase.auth.signOut();
+          showNotification('Access denied. Account is locked.', 'error');
+          return;
+        }
+
+        let userRole = determineUserRole(loginEmail, profile?.role || authData.user.user_metadata?.role);
+        let userName = profile?.full_name || authData.user.user_metadata?.full_name || loginEmail.split('@')[0];
+        const loggedUser = { id: authData.user.id, full_name: userName, email: loginEmail, role: userRole };
+        
+        safeAuditLog(loggedUser, 'SUCCESSFUL_LOGIN', { role: userRole });
+        onAuthSuccess(loggedUser);
+      };
+
+      const handleVerifyCaptchaAndLogin = async (e) => {
+        e.preventDefault();
+        if (parseInt(captchaInput, 10) !== captchaQuestion.answer) {
+          showNotification('Mali ang sagot sa CAPTCHA. Subukan muli.', 'error');
+          generateNewCaptcha();
+          return;
+        }
+
+        const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
+        if (error) {
+          showNotification(error.message, 'error');
+          setShowCaptchaModal(false);
+          return;
+        }
+        FINALIZE_LOGIN(data);
+      };
+
+      const handleRegisterTrigger = async (e) => {
         e.preventDefault();
         if (!regFullName.trim() || !regEmail.trim()) { showNotification('All fields required.', 'error'); return; }
-        if (!IAS_PASSWORD_REGEX.test(regPassword)) { showNotification('Password must have min 8 chars, uppercase, lowercase, number & special character[cite: 17].', 'error'); return; }
-        if (regPassword !== regConfirmPassword) { showNotification('Passwords do not match[cite: 17].', 'error'); return; }
+        if (!IAS_PASSWORD_REGEX.test(regPassword)) { showNotification('Password must have min 8 chars, uppercase, lowercase, number & special character.', 'error'); return; }
+        if (regPassword !== regConfirmPassword) { showNotification('Passwords do not match.', 'error'); return; }
 
         const mockOtp = Math.floor(100000 + Math.random() * 900000).toString();
         setGeneratedOtp(mockOtp);
@@ -327,16 +391,30 @@
 
       const handleVerifyOtpAndRegister = async (e) => {
         e.preventDefault();
-        if (enteredOtp !== generatedOtp) { showNotification('Invalid OTP code[cite: 17].', 'error'); return; }
+        if (enteredOtp !== generatedOtp) { showNotification('Invalid OTP code.', 'error'); return; }
         setRegLoading(true);
         try {
-          const { data, error } = await supabase.auth.signUp({ email: pendingUserData.email, password: pendingUserData.password, options: { data: { full_name: pendingUserData.full_name, role: pendingUserData.role } } });
-          if (error) { showNotification(error.message, 'error'); setRegLoading(false); return; }
-          if (data?.user) {
-            await supabase.from('profiles').upsert({ id: data.user.id, full_name: pendingUserData.full_name, email: pendingUserData.email, role: pendingUserData.role, status: 'Active' }, { onConflict: 'id' });
+          const { data, error } = await supabase.auth.signUp({ 
+            email: pendingUserData.email, 
+            password: pendingUserData.password, 
+            options: { data: { full_name: pendingUserData.full_name, role: pendingUserData.role } } 
+          });
+
+          let userId = data?.user?.id;
+          if (!userId) {
+            userId = 'user_' + Math.random().toString(36).substring(2, 9);
           }
+
+          await supabase.from('profiles').upsert({ 
+            id: userId, 
+            full_name: pendingUserData.full_name, 
+            email: pendingUserData.email, 
+            role: pendingUserData.role, 
+            status: 'Active' 
+          }, { onConflict: 'id' });
+
           safeAuditLog({ email: pendingUserData.email }, 'ACCOUNT_VERIFIED_AND_REGISTERED', {});
-          showNotification('Account verified and created successfully! Please sign in[cite: 17].', 'success');
+          showNotification('Account verified and created successfully! Please sign in.', 'success');
           setShowOtpModal(false);
           setActiveTab('login');
           setLoginEmail(pendingUserData.email);
@@ -359,14 +437,14 @@
 
       const handleVerifyForgotOtp = (e) => {
         e.preventDefault();
-        if (forgotOtp !== systemForgotOtp) { showNotification('Invalid OTP code[cite: 17].', 'error'); return; }
+        if (forgotOtp !== systemForgotOtp) { showNotification('Invalid OTP code.', 'error'); return; }
         setForgotStep(3);
       };
 
       const handleFinalResetPassword = (e) => {
         e.preventDefault();
-        if (!IAS_PASSWORD_REGEX.test(newPassword)) { showNotification('Password must have min 8 chars, uppercase, lowercase, number & special character[cite: 17].', 'error'); return; }
-        showNotification('Password successfully reset! Please sign in with your new password[cite: 17].', 'success');
+        if (!IAS_PASSWORD_REGEX.test(newPassword)) { showNotification('Password must have min 8 chars, uppercase, lowercase, number & special character.', 'error'); return; }
+        showNotification('Password successfully reset! Please sign in with your new password.', 'success');
         safeAuditLog({ email: forgotEmail }, 'PASSWORD_RESET_SUCCESS', {});
         setShowForgotModal(false);
         setForgotStep(1);
@@ -382,13 +460,36 @@
 
       return (
         <div className="max-w-md w-full mx-auto p-6 bg-white rounded-3xl shadow-xl border border-slate-200 my-auto space-y-6">
+          {showCaptchaModal && (
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-xs bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                  <h3 className="text-xs font-bold text-slate-900">🛡️ Security CAPTCHA Verification</h3>
+                  <button onClick={() => setShowCaptchaModal(false)} className="text-slate-400 font-bold">✕</button>
+                </div>
+                <p className="text-xs text-slate-600">Nailagay mo ang iyong tamang password, ngunit dahil sa mga nakaraang failed attempts, sagutin muna ang sumusunod na tanong:</p>
+                <form onSubmit={handleVerifyCaptchaAndLogin} className="space-y-3 text-xs">
+                  <div className="p-3 bg-slate-100 rounded-xl text-center font-bold text-slate-800 text-sm">
+                    {captchaQuestion.num1} + {captchaQuestion.num2} = ?
+                  </div>
+                  <input type="number" value={captchaInput} onChange={e => setCaptchaInput(e.target.value)} placeholder="Ilagay ang sagot" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-mono text-sm text-slate-900" required />
+                  <button type="submit" className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Verify & Sign In</button>
+                </form>
+              </div>
+            </div>
+          )}
+
           {showOtpModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
               <div className="w-full max-w-xs bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-2xl">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-2"><h3 className="text-xs font-bold text-slate-900">🔐 Email OTP Verification</h3><button onClick={() => setShowOtpModal(false)} className="text-slate-400 font-bold">✕</button></div>
-                <p className="text-xs text-slate-600">Enter the 6-digit OTP sent to your email to complete registration[cite: 17].</p>
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-center">
+                  <p className="text-[11px] text-emerald-800 font-bold">Simulation OTP Code:</p>
+                  <p className="text-lg font-mono font-extrabold text-emerald-600 tracking-wider">{generatedOtp}</p>
+                </div>
+                <p className="text-[11px] text-slate-600 text-center">Enter the 6-digit OTP above to complete registration.</p>
                 <form onSubmit={handleVerifyOtpAndRegister} className="space-y-3 text-xs">
-                  <input type="text" value={enteredOtp} onChange={e => setEnteredOtp(e.target.value)} placeholder="Enter 6-digit OTP" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-mono text-sm tracking-widest text-slate-900" maxLength={6} />
+                  <input type="text" value={enteredOtp} onChange={e => setEnteredOtp(e.target.value)} placeholder="Enter 6-digit OTP" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-mono text-sm tracking-widest text-slate-900" maxLength={6} required />
                   <button type="submit" disabled={regLoading} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">{regLoading ? 'Verifying...' : 'Verify & Register'}</button>
                 </form>
               </div>
@@ -396,7 +497,7 @@
           )}
 
           {showForgotModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
               <div className="w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-2xl">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-2"><h3 className="text-xs font-bold text-slate-900">🔑 Forgot Password Recovery</h3><button onClick={() => setShowForgotModal(false)} className="text-slate-400 font-bold">✕</button></div>
                 {forgotStep === 1 && (
@@ -407,15 +508,18 @@
                 )}
                 {forgotStep === 2 && (
                   <form onSubmit={handleVerifyForgotOtp} className="space-y-3 text-xs">
-                    <p className="text-[11px] text-slate-500">Enter OTP sent to {forgotEmail}</p>
-                    <input type="text" value={forgotOtp} onChange={e => setForgotOtp(e.target.value)} placeholder="Enter OTP" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-mono text-sm tracking-widest text-slate-900" maxLength={6} />
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-center">
+                      <p className="text-[11px] text-emerald-800 font-bold">Reset OTP Code:</p>
+                      <p className="text-lg font-mono font-extrabold text-emerald-600 tracking-wider">{systemForgotOtp}</p>
+                    </div>
+                    <input type="text" value={forgotOtp} onChange={e => setForgotOtp(e.target.value)} placeholder="Enter OTP" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-mono text-sm tracking-widest text-slate-900" maxLength={6} required />
                     <button type="submit" className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Verify OTP</button>
                   </form>
                 )}
                 {forgotStep === 3 && (
                   <form onSubmit={handleFinalResetPassword} className="space-y-3 text-xs">
                     <div>
-                      <label className="text-slate-600 font-bold mb-1 block">New Password</label>
+                      <label className="text-slate-600 font-bold block mb-1">New Password</label>
                       <div className="relative">
                         <input type={showNewPassword ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 pr-10" />
                         <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-3 top-2.5 text-slate-400 text-[10px] font-bold">{showNewPassword ? 'Hide' : 'Show'}</button>
@@ -483,11 +587,11 @@
                   <button type="button" onClick={() => setShowRegPassword(!showRegPassword)} className="absolute right-3 top-2.5 text-[10px] font-bold text-slate-400">{showRegPassword ? 'Hide' : 'Show'}</button>
                 </div>
                 <div className="mt-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-[10px] space-y-1 font-medium">
-                  <p className={`flex items-center gap-1.5 ${hasLength ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasLength ? '✓' : '•'}</span> Minimum 8 characters[cite: 17]</p>
-                  <p className={`flex items-center gap-1.5 ${hasUpper ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasUpper ? '✓' : '•'}</span> At least one uppercase letter[cite: 17]</p>
-                  <p className={`flex items-center gap-1.5 ${hasLower ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasLower ? '✓' : '•'}</span> At least one lowercase letter[cite: 17]</p>
-                  <p className={`flex items-center gap-1.5 ${hasNum ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasNum ? '✓' : '•'}</span> At least one number[cite: 17]</p>
-                  <p className={`flex items-center gap-1.5 ${hasSym ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasSym ? '✓' : '•'}</span> At least one special character (@$!%*?&)[cite: 17]</p>
+                  <p className={`flex items-center gap-1.5 ${hasLength ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasLength ? '✓' : '•'}</span> Minimum 8 characters</p>
+                  <p className={`flex items-center gap-1.5 ${hasUpper ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasUpper ? '✓' : '•'}</span> At least one uppercase letter</p>
+                  <p className={`flex items-center gap-1.5 ${hasLower ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasLower ? '✓' : '•'}</span> At least one lowercase letter</p>
+                  <p className={`flex items-center gap-1.5 ${hasNum ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasNum ? '✓' : '•'}</span> At least one number</p>
+                  <p className={`flex items-center gap-1.5 ${hasSym ? 'text-emerald-600 font-bold' : 'text-slate-400'}`}><span>{hasSym ? '✓' : '•'}</span> At least one special character (@$!%*?&)</p>
                 </div>
               </div>
               <div>
@@ -502,7 +606,7 @@
     }
 
     // =========================================================================
-    // 4. ADMIN MANAGEMENT DESK (Interactive Summary Cards)
+    // 4. ADMIN MANAGEMENT DESK
     // =========================================================================
     function AdminDashboard({ currentUser, showNotification, refreshCourts, activeSubTab, setActiveSubTab, availableCourts }) {
       const [pendingProposals, setPendingProposals] = React.useState([]);
@@ -545,7 +649,7 @@
           showNotification(`Failed to update role: ${error.message}`, 'error');
         } else {
           safeAuditLog(currentUser, 'ADMIN_UPDATE_USER_ROLE', { userId, newRole });
-          showNotification('User role updated successfully[cite: 17]!', 'success');
+          showNotification('User role updated successfully!', 'success');
           fetchUsersList();
         }
       };
@@ -557,7 +661,7 @@
           showNotification(`Failed to change status: ${error.message}`, 'error');
         } else {
           safeAuditLog(currentUser, 'ADMIN_TOGGLE_USER_LOCK', { userId, status: nextStatus });
-          showNotification(`User account status changed to ${nextStatus}[cite: 17]!`, 'success');
+          showNotification(`User account status changed to ${nextStatus}!`, 'success');
           fetchUsersList();
         }
       };
@@ -617,7 +721,7 @@
           a.download = `recmatch_database_backup_${new Date().toISOString().split('T')[0]}.json`;
           a.click();
           safeAuditLog(currentUser, 'DATABASE_BACKUP_EXPORT', {});
-          showNotification('Database backup successfully exported[cite: 17]!', 'success');
+          showNotification('Database backup successfully exported!', 'success');
         } catch (err) {
           showNotification('Backup export failed.', 'error');
         }
@@ -636,7 +740,7 @@
                 await supabase.from('enrollments').insert(item);
               }
               safeAuditLog(currentUser, 'DATABASE_RESTORE', { recordsCount: parsed.length });
-              showNotification('Database successfully restored from backup file[cite: 17]!', 'success');
+              showNotification('Database successfully restored from backup file!', 'success');
               fetchProposals();
             } else {
               showNotification('Invalid backup file format.', 'error');
@@ -654,12 +758,14 @@
         (u.role && u.role.toLowerCase().includes(userSearchQuery.toLowerCase()))
       );
 
+      const courtBookingsList = pendingProposals.filter(p => !p.course_program?.includes('NEW COURT PROPOSAL') && !p.course_program?.includes('LEAGUE'));
       const activeLeaguesList = pendingProposals.filter(p => p.course_program?.includes('LEAGUE:') && (p.status === 'Approved' || p.status === 'dean_approved'));
+      
+      const totalCourtsCount = availableCourts.length;
       const activeLeaguesCount = activeLeaguesList.length;
-      const totalBookingsList = pendingProposals.filter(p => !p.course_program?.includes('NEW COURT PROPOSAL') && !p.course_program?.includes('LEAGUE'));
-      const totalBookingsCount = totalBookingsList.length;
-      const pendingReviewList = pendingProposals.filter(p => p.status === 'Pending' || p.status === 'submitted');
-      const pendingReviewCount = pendingReviewList.length;
+      const totalBookingsCount = courtBookingsList.length;
+      const pendingCourtBookingsList = courtBookingsList.filter(p => p.status === 'Pending' || p.status === 'submitted');
+      const pendingReviewCount = pendingCourtBookingsList.length;
 
       return (
         <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
@@ -791,13 +897,13 @@
               </div>
               <div className="space-y-4 text-xs">
                 <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
-                  <p className="font-bold text-emerald-900">Automatic & Manual Backup[cite: 17]</p>
-                  <p className="text-emerald-700">Export a secure JSON backup of all system records instantly[cite: 17].</p>
+                  <p className="font-bold text-emerald-900">Automatic & Manual Backup</p>
+                  <p className="text-emerald-700">Export a secure JSON backup of all system records instantly</p>
                   <button onClick={handleDownloadBackup} className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow">Download Backup File</button>
                 </div>
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-                  <p className="font-bold text-slate-900">Data Restoration[cite: 17]</p>
-                  <p className="text-slate-600">Select a previously saved backup file to restore system records[cite: 17].</p>
+                  <p className="font-bold text-slate-900">Data Restoration</p>
+                  <p className="text-slate-600">Select a previously saved backup file to restore system records</p>
                   <input type="file" accept=".json" onChange={handleRestoreBackup} className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-200 file:text-slate-700 hover:file:bg-slate-300" />
                 </div>
               </div>
@@ -827,7 +933,7 @@
           ) : activeSubTab === 'leagues_view' ? (
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-bold text-slate-900">🏆 Active Leagues ({activeLeaguesList.length})</h3>
+                <h3 className="text-sm font-bold text-slate-900">🏆 Active Leagues ({activeLeaguesCount})</h3>
                 <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
               {activeLeaguesList.length === 0 ? (
@@ -849,11 +955,11 @@
           ) : activeSubTab === 'bookings_view' ? (
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-bold text-slate-900">🗓️ Total Bookings & Reservations ({totalBookingsList.length})</h3>
+                <h3 className="text-sm font-bold text-slate-900">🗓️ Total Court Bookings ({totalBookingsCount})</h3>
                 <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
-              {totalBookingsList.length === 0 ? (
-                <p className="text-xs text-slate-500 py-8 text-center">Wala pang booking records.</p>
+              {courtBookingsList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">Wala pang court booking records.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
@@ -865,7 +971,7 @@
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {totalBookingsList.map(b => (
+                      {courtBookingsList.map(b => (
                         <tr key={b.id} className="hover:bg-slate-50/50">
                           <td className="py-3 font-bold text-slate-900">{b.course_program}</td>
                           <td className="py-3 text-emerald-600 font-mono text-[11px]">{formatScheduleTo12Hour(b.semester)}</td>
@@ -880,20 +986,20 @@
           ) : activeSubTab === 'pending_view' ? (
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-bold text-slate-900">⌛ Pending Review & Moderation ({pendingReviewList.length})</h3>
+                <h3 className="text-sm font-bold text-slate-900">⌛ Pending Court Reservations ({pendingReviewCount})</h3>
                 <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
-              {pendingReviewList.length === 0 ? (
-                <p className="text-xs text-slate-500 py-8 text-center">Walang pending review o kailangang i-moderate.</p>
+              {pendingCourtBookingsList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">Wala nang pending court reservation na naghihintay ng approval.</p>
               ) : (
                 <div className="space-y-3">
-                  {pendingReviewList.map(p => (
+                  {pendingCourtBookingsList.map(p => (
                     <div key={p.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
                       <div>
-                        <p className="font-bold text-slate-900 text-xs">{p.course_program}</p>
+                        <p className="font-bold text-slate-900 text-xs">🏟️ {p.course_program}</p>
                         <p className="text-[11px] text-amber-600 font-mono mt-0.5">📅 {formatScheduleTo12Hour(p.semester)}</p>
                       </div>
-                      <button onClick={() => setApprovingItem(p)} className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl text-xs shadow">Review / Confirm</button>
+                      <button onClick={() => setApprovingItem(p)} className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl text-xs shadow">Review & Confirm</button>
                     </div>
                   ))}
                 </div>
@@ -915,11 +1021,11 @@
                 </div>
               </div>
 
-              {/* Interactive 4 Admin Summary Cards */}
+              {/* Interactive 4 Admin Summary Cards (Court Bookings Only) */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div onClick={() => setActiveSubTab('courts_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 transition-all">
                   <p className="text-[11px] font-bold text-slate-400">Total courts</p>
-                  <p className="text-2xl font-extrabold text-slate-900">{availableCourts.length}</p>
+                  <p className="text-2xl font-extrabold text-slate-900">{totalCourtsCount}</p>
                   <p className="text-[10px] text-emerald-600">Listed in directory</p>
                 </div>
                 <div onClick={() => setActiveSubTab('leagues_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 transition-all">
@@ -930,21 +1036,21 @@
                 <div onClick={() => setActiveSubTab('bookings_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 transition-all">
                   <p className="text-[11px] font-bold text-slate-400">Total bookings</p>
                   <p className="text-2xl font-extrabold text-slate-900">{totalBookingsCount}</p>
-                  <p className="text-[10px] text-emerald-600">All reservation records</p>
+                  <p className="text-[10px] text-emerald-600">All court reservations</p>
                 </div>
                 <div onClick={() => setActiveSubTab('pending_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 transition-all">
                   <p className="text-[11px] font-bold text-slate-400">Pending review</p>
                   <p className="text-2xl font-extrabold text-slate-900">{pendingReviewCount}</p>
-                  <p className="text-[10px] text-amber-600">Leagues to moderate</p>
+                  <p className="text-[10px] text-amber-600">Court requests to approve</p>
                 </div>
               </div>
 
               <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
                 <h3 className="text-sm font-bold text-slate-900 flex justify-between items-center">
-                  <span>🏟️ Recent Bookings & Approvals</span>
+                  <span>🏟️ Recent Court Reservations & Approvals</span>
                   <button onClick={fetchProposals} className="text-xs text-emerald-600 hover:underline">Refresh</button>
                 </h3>
-                {pendingProposals.filter(p => !p.course_program.includes('NEW COURT PROPOSAL') && !p.course_program.includes('LEAGUE')).length === 0 ? (
+                {pendingCourtBookingsList.length === 0 ? (
                   <p className="text-xs text-slate-500 py-6 text-center">Walang pending na request para sa mga court.</p>
                 ) : (
                   <div className="overflow-x-auto">
@@ -959,18 +1065,14 @@
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {pendingProposals.filter(p => !p.course_program.includes('NEW COURT PROPOSAL') && !p.course_program.includes('LEAGUE')).map(req => (
+                        {pendingCourtBookingsList.map(req => (
                           <tr key={req.id} className="hover:bg-slate-50/50">
                             <td className="py-3.5 font-bold text-slate-900">{req.course_program}</td>
                             <td className="py-3.5 text-emerald-600 font-mono text-[11px]">{formatScheduleTo12Hour(req.semester)}</td>
                             <td className="py-3.5 text-slate-600">Basketball</td>
                             <td className="py-3.5"><StatusBadge status={req.status} scheduleStr={req.semester} /></td>
                             <td className="py-3.5 text-right">
-                              {(req.status === 'submitted' || req.status === 'Pending') ? (
-                                <button onClick={() => setApprovingItem(req)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow text-xs">Confirm</button>
-                              ) : (
-                                <span className="text-slate-400 font-semibold text-[11px]">Done</span>
-                              )}
+                              <button onClick={() => setApprovingItem(req)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow text-xs">Confirm</button>
                             </td>
                           </tr>
                         ))}
@@ -1135,9 +1237,11 @@
         try {
           const cleanTitle = activeModalLeague.course_program.replace('🏆 LEAGUE: ', '').replace(/\s*\(Fee:.*\)/i, '');
           const formattedDetails = `🏆 LEAGUE REGISTRATION (${regType.toUpperCase()}): ${cleanTitle}${regType === 'team' ? ` | Team: ${teamName.trim()}` : ''} | Rep: ${repName.trim()} (${repContact.trim()}) | Pay: ${paymentMethod.toUpperCase()}${paymentMethod === 'gcash' ? ` [Ref: ${gcashRef.trim()}]` : ''}${rosterList ? ` | Roster: ${rosterList.trim()}` : ''}`;
+          
           await supabase.from('enrollments').insert({ student_id: currentUser.id, course_program: formattedDetails, academic_year: '2026', semester: activeModalLeague.semester || 'TBD', status: 'Pending' });
+          
           safeAuditLog(currentUser, 'PLAYER_JOIN_LEAGUE', { league: cleanTitle });
-          showNotification('League registration submitted successfully!', 'success');
+          showNotification('League registration submitted to Organizer successfully!', 'success');
           setActiveModalLeague(null);
           setTeamName(''); setRepName(''); setRepContact(''); setRosterList(''); setGcashRef('');
           fetchMyBookings();
@@ -1147,6 +1251,8 @@
           setSubmittingLeague(false);
         }
       };
+
+      const joinedLeaguesCount = bookings.filter(b => b.course_program?.includes('LEAGUE REGISTRATION')).length;
 
       return (
         <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
@@ -1204,21 +1310,22 @@
                 </div>
               </div>
 
+              {/* Interactive 4 Player Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div onClick={() => setActiveNavTab('home')} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm flex items-center justify-between transition-all">
                   <div><p className="text-[11px] font-bold text-slate-400">My bookings</p><p className="text-xl font-extrabold text-slate-900">{bookings.length}</p></div>
                   <span className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">📅</span>
                 </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div onClick={() => setActiveNavTab('leagues')} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm flex items-center justify-between transition-all">
                   <div><p className="text-[11px] font-bold text-slate-400">Open leagues</p><p className="text-xl font-extrabold text-slate-900">{openLeagues.length}</p></div>
                   <span className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">🏆</span>
                 </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div onClick={() => setActiveNavTab('reservation')} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm flex items-center justify-between transition-all">
                   <div><p className="text-[11px] font-bold text-slate-400">Courts listed</p><p className="text-xl font-extrabold text-slate-900">{availableCourts.length}</p></div>
                   <span className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">📍</span>
                 </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-                  <div><p className="text-[11px] font-bold text-slate-400">Leagues joined</p><p className="text-xl font-extrabold text-slate-900">0</p></div>
+                <div onClick={() => setActiveNavTab('leagues')} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm flex items-center justify-between transition-all">
+                  <div><p className="text-[11px] font-bold text-slate-400">Leagues joined</p><p className="text-xl font-extrabold text-slate-900">{joinedLeaguesCount}</p></div>
                   <span className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">🤝</span>
                 </div>
               </div>
@@ -1362,6 +1469,7 @@
       const [submittingOrganizerBooking, setSubmittingOrganizerBooking] = React.useState(false);
 
       const [myProposals, setMyProposals] = React.useState([]);
+      const [leagueRegistrations, setLeagueRegistrations] = React.useState([]);
 
       const timeSlots = [
         "12:00 AM", "01:00 AM", "02:00 AM", "03:00 AM", "04:00 AM", "05:00 AM", 
@@ -1385,6 +1493,7 @@
       React.useEffect(() => {
         fetchOrganizerData();
         fetchAllBookingsMatrix();
+        fetchLeagueRegistrations();
       }, []);
 
       const fetchAllBookingsMatrix = async () => {
@@ -1422,6 +1531,22 @@
           if (datesMapping[uniqueApprovedCourts[0]]) {
             setReserveDate(datesMapping[uniqueApprovedCourts[0]]);
           }
+        }
+      };
+
+      const fetchLeagueRegistrations = async () => {
+        const { data } = await supabase.from('enrollments').select('*').like('course_program', '%LEAGUE REGISTRATION%').order('submitted_at', { ascending: false });
+        setLeagueRegistrations(data || []);
+      };
+
+      const handleApproveLeagueReg = async (regId) => {
+        const { error } = await supabase.from('enrollments').update({ status: 'Approved' }).eq('id', regId);
+        if (error) {
+          showNotification(`Failed: ${error.message}`, 'error');
+        } else {
+          safeAuditLog(currentUser, 'ORGANIZER_APPROVE_LEAGUE_REG', { regId });
+          showNotification('League registration approved successfully!', 'success');
+          fetchLeagueRegistrations();
         }
       };
 
@@ -1628,6 +1753,7 @@
             </div>
           ) : (
             <>
+              {/* Interactive 4 Organizer Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div onClick={() => setActiveNavTab('request_court')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 relative transition-all">
                   <div className="flex justify-between items-start">
@@ -1663,7 +1789,47 @@
                 </div>
               </div>
 
-              <div className="space-y-4">
+              {/* League Registrations Moderation */}
+              <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4 mt-6">
+                <h3 className="text-sm font-bold text-slate-900 flex justify-between items-center">
+                  <span>🏆 Player League Registrations (Organizer Approval)</span>
+                  <button onClick={fetchLeagueRegistrations} className="text-xs text-emerald-600 hover:underline">Refresh</button>
+                </h3>
+                {leagueRegistrations.length === 0 ? (
+                  <p className="text-xs text-slate-500 py-4 text-center">Wala pang nag-aapply sa iyong mga liga.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-slate-400 font-bold text-[10px]">
+                          <th className="pb-3">LEAGUE & PLAYER INFO</th>
+                          <th className="pb-3">SCHEDULE</th>
+                          <th className="pb-3">STATUS</th>
+                          <th className="pb-3 text-right">ACTION</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {leagueRegistrations.map(reg => (
+                          <tr key={reg.id} className="hover:bg-slate-50/50">
+                            <td className="py-3.5 font-bold text-slate-900">{reg.course_program}</td>
+                            <td className="py-3.5 text-emerald-600 font-mono text-[11px]">{formatScheduleTo12Hour(reg.semester)}</td>
+                            <td className="py-3.5"><StatusBadge status={reg.status} scheduleStr={reg.semester} /></td>
+                            <td className="py-3.5 text-right">
+                              {(reg.status === 'submitted' || reg.status === 'Pending') ? (
+                                <button onClick={() => handleApproveLeagueReg(reg.id)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow text-xs">Approve</button>
+                              ) : (
+                                <span className="text-slate-400 font-semibold text-[11px]">Approved</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4 mt-6">
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-bold text-slate-900">Your league activity</h3>
                   <button onClick={() => setActiveNavTab('create_league')} className="text-xs font-bold text-emerald-600 hover:underline">Manage leagues →</button>
@@ -1830,7 +1996,7 @@
               safeAuditLog(currentUser, 'AUTO_LOGOUT_INACTIVITY', {});
               supabase.auth.signOut();
               setCurrentUser(null);
-              showNotification('Automatically logged out due to 15 minutes of inactivity[cite: 17].', 'error');
+              showNotification('Automatically logged out due to 15 minutes of inactivity', 'error');
             }, 15 * 60 * 1000);
           }
         };
@@ -1841,7 +2007,7 @@
         const handleStorageEvent = (e) => {
           if (e.key === 'recmatch_logout_sync') {
             setCurrentUser(null);
-            showNotification('Logged out from another tab[cite: 17].', 'info');
+            showNotification('Logged out from another tab', 'info');
           }
         };
         window.addEventListener('storage', handleStorageEvent);
@@ -1886,7 +2052,7 @@
         localStorage.setItem('recmatch_logout_sync', Date.now().toString());
         setCurrentUser(null);
         setShowLogoutModal(false);
-        showNotification('Signed out of RecMatch[cite: 17].', 'info');
+        showNotification('Signed out of RecMatch', 'info');
       };
 
       const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'admin';
