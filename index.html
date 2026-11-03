@@ -614,8 +614,6 @@
       const [usersList, setUsersList] = React.useState([]);
       const [userSearchQuery, setUserSearchQuery] = React.useState('');
 
-      const [approvingItem, setApprovingItem] = React.useState(null);
-      const [adminEndTime, setAdminEndTime] = React.useState('18:00');
       const [courtName, setCourtName] = React.useState('');
       const [courtLocation, setCourtLocation] = React.useState('Ormoc City');
       const [courtRate, setCourtRate] = React.useState('200');
@@ -694,19 +692,26 @@
         }
       };
 
-      const handleConfirmApprovalWithEndTime = async (e) => {
-        e.preventDefault();
-        if (!approvingItem) return;
-        const updatedSemester = `${approvingItem.semester} to ${adminEndTime}`;
-        const { error } = await supabase.from('enrollments').update({ status: 'Approved', semester: updatedSemester }).eq('id', approvingItem.id);
+      const handleApproveBooking = async (reqItem) => {
+        const { error } = await supabase.from('enrollments').update({ status: 'Approved' }).eq('id', reqItem.id);
         if (error) {
           showNotification(`Approval failed: ${error.message}`, 'error');
         } else {
-          safeAuditLog(currentUser, 'ADMIN_APPROVE_BOOKING', { id: approvingItem.id });
-          showNotification('Court reservation approved with End Time set!', 'success');
-          setApprovingItem(null);
+          safeAuditLog(currentUser, 'ADMIN_APPROVE_BOOKING', { id: reqItem.id, court: reqItem.course_program });
+          showNotification('Court reservation successfully approved!', 'success');
           fetchProposals();
           if (refreshCourts) refreshCourts();
+        }
+      };
+
+      const handleRejectBooking = async (reqItem) => {
+        const { error } = await supabase.from('enrollments').update({ status: 'rejected' }).eq('id', reqItem.id);
+        if (error) {
+          showNotification(`Rejection failed: ${error.message}`, 'error');
+        } else {
+          safeAuditLog(currentUser, 'ADMIN_REJECT_BOOKING', { id: reqItem.id, court: reqItem.course_program });
+          showNotification('Court reservation successfully rejected.', 'success');
+          fetchProposals();
         }
       };
 
@@ -769,31 +774,6 @@
 
       return (
         <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
-          {approvingItem && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
-              <div className="w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-4">
-                <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
-                  <h3 className="text-xs font-bold text-slate-900">⏰ Set End Time for Reservation</h3>
-                  <button onClick={() => setApprovingItem(null)} className="text-slate-400 font-bold">✕</button>
-                </div>
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1">
-                  <p className="font-bold text-slate-900">🏟️ {approvingItem.course_program}</p>
-                  <p className="text-[10px] text-emerald-600 font-mono">Start: {formatScheduleTo12Hour(approvingItem.semester)}</p>
-                </div>
-                <form onSubmit={handleConfirmApprovalWithEndTime} className="space-y-3.5 text-xs">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Reservation End Time (e.g., 12:00 PM)</label>
-                    <input type="time" value={adminEndTime} onChange={(e) => setAdminEndTime(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 cursor-pointer" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button type="button" onClick={() => setApprovingItem(null)} className="py-2.5 px-3 bg-slate-100 text-slate-700 rounded-xl font-semibold">Cancel</button>
-                    <button type="submit" className="py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Confirm & Approve</button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
           {activeSubTab === 'add_court' ? (
             <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm my-auto">
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -994,12 +974,15 @@
               ) : (
                 <div className="space-y-3">
                   {pendingCourtBookingsList.map(p => (
-                    <div key={p.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                    <div key={p.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center gap-2">
                       <div>
                         <p className="font-bold text-slate-900 text-xs">🏟️ {p.course_program}</p>
                         <p className="text-[11px] text-amber-600 font-mono mt-0.5">📅 {formatScheduleTo12Hour(p.semester)}</p>
                       </div>
-                      <button onClick={() => setApprovingItem(p)} className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl text-xs shadow">Review & Confirm</button>
+                      <div className="flex gap-1.5 shrink-0">
+                        <button onClick={() => handleApproveBooking(p)} className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl text-xs shadow hover:bg-emerald-500">Approve</button>
+                        <button onClick={() => handleRejectBooking(p)} className="px-3 py-1.5 bg-red-600 text-white font-bold rounded-xl text-xs shadow hover:bg-red-500">Reject</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1021,7 +1004,7 @@
                 </div>
               </div>
 
-              {/* Interactive 4 Admin Summary Cards (Court Bookings Only) */}
+              {/* Interactive 4 Admin Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div onClick={() => setActiveSubTab('courts_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 transition-all">
                   <p className="text-[11px] font-bold text-slate-400">Total courts</p>
@@ -1047,7 +1030,7 @@
 
               <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
                 <h3 className="text-sm font-bold text-slate-900 flex justify-between items-center">
-                  <span>🏟️ Recent Court Reservations & Approvals</span>
+                  <span>🏟️ Pending Court Reservations & Approvals (User & Organizer)</span>
                   <button onClick={fetchProposals} className="text-xs text-emerald-600 hover:underline">Refresh</button>
                 </h3>
                 {pendingCourtBookingsList.length === 0 ? (
@@ -1057,11 +1040,10 @@
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="border-b border-slate-100 text-slate-400 font-bold text-[10px]">
-                          <th className="pb-3">COURT / PLAYER</th>
-                          <th className="pb-3">DATE & TIME</th>
-                          <th className="pb-3">SPORT</th>
+                          <th className="pb-3">COURT & REQUESTER</th>
+                          <th className="pb-3">SCHEDULE RANGE (Set by User / Organizer)</th>
                           <th className="pb-3">STATUS</th>
-                          <th className="pb-3 text-right">ACTION</th>
+                          <th className="pb-3 text-right">ACTION (Approve / Reject)</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -1069,10 +1051,10 @@
                           <tr key={req.id} className="hover:bg-slate-50/50">
                             <td className="py-3.5 font-bold text-slate-900">{req.course_program}</td>
                             <td className="py-3.5 text-emerald-600 font-mono text-[11px]">{formatScheduleTo12Hour(req.semester)}</td>
-                            <td className="py-3.5 text-slate-600">Basketball</td>
                             <td className="py-3.5"><StatusBadge status={req.status} scheduleStr={req.semester} /></td>
-                            <td className="py-3.5 text-right">
-                              <button onClick={() => setApprovingItem(req)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow text-xs">Confirm</button>
+                            <td className="py-3.5 text-right space-x-1.5">
+                              <button onClick={() => handleApproveBooking(req)} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow text-xs">Approve</button>
+                              <button onClick={() => handleRejectBooking(req)} className="px-3.5 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl shadow text-xs">Reject</button>
                             </td>
                           </tr>
                         ))}
@@ -1097,7 +1079,11 @@
       const [selectedCourt, setSelectedCourt] = React.useState(null);
       const [calendarStartDate, setCalendarStartDate] = React.useState(new Date());
       const [allBookingsForMatrix, setAllBookingsForMatrix] = React.useState([]);
-      const [selectedGridSlot, setSelectedGridSlot] = React.useState(null);
+
+      const [startSlot, setStartSlot] = React.useState(null);
+      const [endSlot, setEndSlot] = React.useState(null);
+
+      const [viewMode, setViewMode] = React.useState('bookings');
 
       const [showDetailsModal, setShowDetailsModal] = React.useState(false);
       const [resName, setResName] = React.useState(currentUser?.full_name || '');
@@ -1201,21 +1187,67 @@
         return 'green';
       };
 
+      const handleSlotClick = (dObj, time24, slotLabel, dayIdx, timeIdx) => {
+        const status = getSlotStatus(dObj.dateStr, time24);
+        if (status === 'red') return;
+
+        const clickedSlot = { date: dObj.dateStr, time24, label: slotLabel, dayIndex: dayIdx, timeIndex: timeIdx };
+
+        if (!startSlot || (startSlot && endSlot)) {
+          setStartSlot(clickedSlot);
+          setEndSlot(null);
+        } else if (startSlot && !endSlot) {
+          if (dayIdx < startSlot.dayIndex || (dayIdx === startSlot.dayIndex && timeIdx <= startSlot.timeIndex)) {
+            setStartSlot(clickedSlot);
+          } else {
+            setEndSlot(clickedSlot);
+          }
+        }
+      };
+
+      const getSlotButtonAppearance = (dObj, time24, dayIdx, timeIdx) => {
+        const status = getSlotStatus(dObj.dateStr, time24);
+        if (status === 'red') return { text: 'Booked', bg: 'bg-red-50 text-red-600 border-red-200 opacity-80 cursor-not-allowed' };
+        if (status === 'yellow') return { text: 'Pending', bg: 'bg-amber-50 text-amber-600 border-amber-200' };
+
+        const isStart = startSlot && startSlot.date === dObj.dateStr && startSlot.time24 === time24;
+        const isEnd = endSlot && endSlot.date === dObj.dateStr && endSlot.time24 === time24;
+
+        if (isStart) return { text: 'Start Time', bg: 'bg-emerald-700 text-white font-extrabold ring-2 ring-emerald-400' };
+        if (isEnd) return { text: 'End Time', bg: 'bg-amber-600 text-white font-extrabold ring-2 ring-amber-400' };
+
+        if (startSlot && endSlot) {
+          const startTimeVal = startSlot.dayIndex * 24 + startSlot.timeIndex;
+          const endTimeVal = endSlot.dayIndex * 24 + endSlot.timeIndex;
+          const currVal = dayIdx * 24 + timeIdx;
+          if (currVal > startTimeVal && currVal < endTimeVal) {
+            return { text: 'Reserved Range', bg: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold' };
+          }
+        }
+
+        return { text: 'Available', bg: 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100' };
+      };
+
       const handleFinalReservationSubmit = async (e) => {
         e.preventDefault();
-        if (!selectedCourt || !selectedGridSlot) return;
+        if (!selectedCourt || !startSlot) return;
         if (!resName.trim() || !resContact.trim()) { showNotification('Name & contact required.', 'error'); return; }
         if (resPayment === 'gcash' && !resGcashRef.trim()) { showNotification('GCash reference no. required.', 'error'); return; }
 
         setSubmittingBooking(true);
         try {
-          const scheduleString = `${selectedGridSlot.date} @ ${selectedGridSlot.time}`;
+          const startTimeStr = `${startSlot.date} @ ${startSlot.time24}`;
+          const endTimeStr = endSlot ? endSlot.time24 : (startSlot.time24 === '23:00' ? '23:59' : timeSlots[Math.min(timeSlots.indexOf(startSlot.label) + 1, timeSlots.length - 1)]);
+          const scheduleString = `${startTimeStr} to ${endTimeStr}`;
+
           const formattedBookingName = `${selectedCourt.name} | Reserver: ${resName.trim()} (Contact: ${resContact.trim()}) | Pay: ${resPayment.toUpperCase()}${resPayment === 'gcash' ? ` [Ref: ${resGcashRef.trim()}]` : ''}`;
+          
           await supabase.from('enrollments').insert({ student_id: currentUser.id, course_program: formattedBookingName, academic_year: '2026', semester: scheduleString, status: 'Pending' });
           safeAuditLog(currentUser, 'PLAYER_BOOK_COURT', { court: selectedCourt.name, time: scheduleString });
           showNotification('Court reservation successfully submitted!', 'success');
           setShowDetailsModal(false);
-          setSelectedGridSlot(null);
+          setStartSlot(null);
+          setEndSlot(null);
           setSelectedCourt(null);
           setResGcashRef('');
           fetchMyBookings();
@@ -1252,14 +1284,15 @@
         }
       };
 
-      const joinedLeaguesCount = bookings.filter(b => b.course_program?.includes('LEAGUE REGISTRATION')).length;
+      const joinedLeaguesList = bookings.filter(b => b.course_program?.includes('LEAGUE REGISTRATION'));
+      const courtBookingsOnlyList = bookings.filter(b => !b.course_program?.includes('LEAGUE REGISTRATION'));
 
       return (
         <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
           {playerNavTab === 'reservation' ? (
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4 max-w-xl mx-auto w-full my-auto">
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-bold text-slate-900">🏟️ Select Court for Matrix Reservation</h3>
+                <h3 className="text-sm font-bold text-slate-900">🏟️ Select Court for Reservation</h3>
                 <button onClick={() => setActiveNavTab('home')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
               {availableCourts.length === 0 ? (
@@ -1272,7 +1305,7 @@
                         <p className="font-bold text-slate-950 text-sm">{c.name}</p>
                         <p className="text-xs text-slate-500">📍 {c.location} • <span className="text-emerald-600 font-semibold">₱{c.rate}/hr</span></p>
                       </div>
-                      <span className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl text-xs shadow">Open Matrix ›</span>
+                      <span className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl text-xs shadow">Reservation ›</span>
                     </div>
                   ))}
                 </div>
@@ -1312,8 +1345,8 @@
 
               {/* Interactive 4 Player Summary Cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div onClick={() => setActiveNavTab('home')} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm flex items-center justify-between transition-all">
-                  <div><p className="text-[11px] font-bold text-slate-400">My bookings</p><p className="text-xl font-extrabold text-slate-900">{bookings.length}</p></div>
+                <div onClick={() => { setViewMode('bookings'); setActiveNavTab('home'); }} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm flex items-center justify-between transition-all">
+                  <div><p className="text-[11px] font-bold text-slate-400">My bookings</p><p className="text-xl font-extrabold text-slate-900">{courtBookingsOnlyList.length}</p></div>
                   <span className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">📅</span>
                 </div>
                 <div onClick={() => setActiveNavTab('leagues')} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm flex items-center justify-between transition-all">
@@ -1324,26 +1357,57 @@
                   <div><p className="text-[11px] font-bold text-slate-400">Courts listed</p><p className="text-xl font-extrabold text-slate-900">{availableCourts.length}</p></div>
                   <span className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">📍</span>
                 </div>
-                <div onClick={() => setActiveNavTab('leagues')} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm flex items-center justify-between transition-all">
-                  <div><p className="text-[11px] font-bold text-slate-400">Leagues joined</p><p className="text-xl font-extrabold text-slate-900">{joinedLeaguesCount}</p></div>
+                <div onClick={() => { setViewMode('leagues_joined'); setActiveNavTab('home'); }} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm flex items-center justify-between transition-all">
+                  <div><p className="text-[11px] font-bold text-slate-400">Leagues joined</p><p className="text-xl font-extrabold text-slate-900">{joinedLeaguesList.length}</p></div>
                   <span className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">🤝</span>
                 </div>
               </div>
 
               {playerNavTab === 'home' && (
                 <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-                  <h3 className="text-sm font-bold text-slate-900">📋 My Bookings</h3>
-                  <div className="space-y-3">
-                    {bookings.map(b => (
-                      <div key={b.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
-                        <div>
-                          <p className="font-bold text-slate-950 text-xs">{b.course_program}</p>
-                          <p className="text-xs text-emerald-600 font-mono mt-0.5">📅 {formatScheduleTo12Hour(b.semester)}</p>
-                        </div>
-                        <StatusBadge status={b.status} scheduleStr={b.semester} />
-                      </div>
-                    ))}
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <h3 className="text-sm font-bold text-slate-900">
+                      {viewMode === 'leagues_joined' ? '🏆 My Joined Leagues' : '📋 My Court Bookings'}
+                    </h3>
+                    <div className="flex gap-2">
+                      <button onClick={() => setViewMode('bookings')} className={`px-3 py-1 rounded-xl text-xs font-bold ${viewMode === 'bookings' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Bookings</button>
+                      <button onClick={() => setViewMode('leagues_joined')} className={`px-3 py-1 rounded-xl text-xs font-bold ${viewMode === 'leagues_joined' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Leagues Joined</button>
+                    </div>
                   </div>
+                  
+                  {viewMode === 'leagues_joined' ? (
+                    joinedLeaguesList.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-6 text-center">Wala ka pang sinalihang liga.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {joinedLeaguesList.map(item => (
+                          <div key={item.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                            <div>
+                              <p className="font-bold text-slate-950 text-xs">{item.course_program}</p>
+                              <p className="text-xs text-emerald-600 font-mono mt-0.5">📅 {formatScheduleTo12Hour(item.semester)}</p>
+                            </div>
+                            <StatusBadge status={item.status} scheduleStr={item.semester} />
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : (
+                    courtBookingsOnlyList.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-6 text-center">Wala ka pang court booking.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {courtBookingsOnlyList.map(b => (
+                          <div key={b.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex justify-between items-center">
+                            <div>
+                              <p className="font-bold text-slate-950 text-xs">{b.course_program}</p>
+                              <p className="text-xs text-emerald-600 font-mono mt-0.5">📅 {formatScheduleTo12Hour(b.semester)}</p>
+                            </div>
+                            <StatusBadge status={b.status} scheduleStr={b.semester} />
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
                 </div>
               )}
             </>
@@ -1353,14 +1417,21 @@
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-3">
               <div className="w-full max-w-2xl bg-white border border-slate-200 rounded-3xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
                 <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                  <h3 className="text-xs font-bold text-slate-900">📅 Slot Matrix: {selectedCourt.name}</h3>
-                  <button onClick={() => setSelectedCourt(null)} className="text-slate-400 font-bold">✕</button>
+                  <div className="space-y-0.5">
+                    <h3 className="text-xs font-bold text-slate-900">🏟️ Slot Range Selection: {selectedCourt.name} (₱{selectedCourt.rate}/hr)</h3>
+                    <p className="text-[10px] text-emerald-600 font-bold">
+                      💡 {!startSlot ? 'Click slot 1 for Start Time.' : !endSlot ? 'Click slot 2 for End Time.' : `Start: ${startSlot.date} ${startSlot.label} ➔ End: ${endSlot.date} ${endSlot.label}`}
+                    </p>
+                  </div>
+                  <button onClick={() => { setSelectedCourt(null); setStartSlot(null); setEndSlot(null); }} className="text-slate-400 font-bold">✕</button>
                 </div>
+                
                 <div className="flex justify-between items-center bg-slate-100 p-2 rounded-xl text-xs font-bold text-slate-700">
                   <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() - 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-white rounded-lg shadow-sm">‹ Prev</button>
                   <span className="text-emerald-600">Ormoc Court Timetable</span>
                   <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() + 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-white rounded-lg shadow-sm">Next ›</button>
                 </div>
+
                 <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-slate-50 p-2">
                   <table className="w-full text-left border-collapse text-[11px]">
                     <thead>
@@ -1370,20 +1441,17 @@
                       </tr>
                     </thead>
                     <tbody>
-                      {timeSlots.map(slotLabel => {
+                      {timeSlots.map((slotLabel, timeIdx) => {
                         const time24 = slotTo24Hr(slotLabel);
                         return (
                           <tr key={slotLabel} className="border-b border-slate-100">
                             <td className="p-2 text-slate-500 font-mono text-[10px]">{slotLabel}</td>
-                            {getSevenDays().map(d => {
-                              const status = getSlotStatus(d.dateStr, time24);
-                              const isChosen = selectedGridSlot?.date === d.dateStr && selectedGridSlot?.time === time24;
-                              let bg = status === 'red' ? 'bg-red-50 text-red-600 border-red-200 opacity-80' : status === 'yellow' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100';
-                              if (isChosen) bg = 'bg-emerald-600 text-white font-extrabold ring-2 ring-emerald-400';
+                            {getSevenDays().map((dObj, dayIdx) => {
+                              const slotApp = getSlotButtonAppearance(dObj, time24, dayIdx, timeIdx);
                               return (
-                                <td key={d.dateStr} className="p-1.5 text-center">
-                                  <button type="button" onClick={() => { if (status !== 'red') setSelectedGridSlot({ date: d.dateStr, time: time24, label: slotLabel }); }} className={`w-full py-2 rounded-xl border text-[10px] font-bold ${bg}`}>
-                                    {status === 'red' ? 'Booked' : status === 'yellow' ? 'Pending' : 'Available'}
+                                <td key={dObj.dateStr} className="p-1.5 text-center">
+                                  <button type="button" onClick={() => handleSlotClick(dObj, time24, slotLabel, dayIdx, timeIdx)} className={`w-full py-2 rounded-xl border text-[10px] font-bold transition-all ${slotApp.bg}`}>
+                                    {slotApp.text}
                                   </button>
                                 </td>
                               );
@@ -1394,10 +1462,18 @@
                     </tbody>
                   </table>
                 </div>
-                {selectedGridSlot && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex justify-between items-center text-xs">
-                    <span className="text-emerald-800 font-semibold">{selectedGridSlot.date} @ {selectedGridSlot.label}</span>
-                    <button onClick={() => setShowDetailsModal(true)} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow">Confirm Reservation ›</button>
+
+                {startSlot && (
+                  <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-3 text-xs">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px] text-emerald-900 bg-white p-2.5 rounded-xl border border-emerald-100">
+                      <div><span className="text-[9px] text-slate-400 block uppercase font-bold">Start Date</span>{startSlot.date}</div>
+                      <div><span className="text-[9px] text-slate-400 block uppercase font-bold">Time In</span>{startSlot.label}</div>
+                      <div><span className="text-[9px] text-slate-400 block uppercase font-bold">End Date</span>{endSlot ? endSlot.date : startSlot.date}</div>
+                      <div><span className="text-[9px] text-slate-400 block uppercase font-bold">Time Out</span>{endSlot ? endSlot.label : (timeSlots[Math.min(timeSlots.indexOf(startSlot.label) + 1, timeSlots.length - 1)] || '18:00')}</div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button onClick={() => setShowDetailsModal(true)} className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow">Proceed to Booking Details ›</button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1412,7 +1488,7 @@
                   <div><label className="text-slate-600 font-bold block mb-1">Your Name</label><input type="text" value={resName} onChange={e => setResName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
                   <div><label className="text-slate-600 font-bold block mb-1">Contact Number</label><input type="text" value={resContact} onChange={e => setResContact(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
                   <div><label className="text-slate-600 font-bold block mb-1">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setResPayment('gcash')} className={`py-1.5 rounded-lg ${resPayment === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setResPayment('cash')} className={`py-1.5 rounded-lg ${resPayment === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
-                  {resPayment === 'gcash' && <div><input type="text" value={resGcashRef} onChange={e => setResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono text-xs" /></div>}
+                  {resPayment === 'gcash' && <div><input type="text" value={resGcashRef} onChange={e => setResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono" /></div>}
                   <button type="submit" disabled={submittingBooking} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Complete Reservation</button>
                 </form>
               </div>
@@ -1433,6 +1509,13 @@
                   )}
                   <div><label className="text-slate-600 font-bold">Representative Name</label><input type="text" value={repName} onChange={e => setRepName(e.target.value)} placeholder="Name" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
                   <div><label className="text-slate-600 font-bold">Contact Number</label><input type="text" value={repContact} onChange={e => setRepContact(e.target.value)} placeholder="09123456789" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
+                  
+                  {/* Attached Files or Camera requirements upload placed right above Payment Method */}
+                  <div>
+                    <label className="text-slate-600 font-bold mb-1 block">Attach Requirements (ID / Proof / Files)</label>
+                    <input type="file" accept="image/*,.pdf" className="w-full text-[11px] text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[11px] file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100" />
+                  </div>
+
                   <div><label className="text-slate-600 font-bold mb-1 block">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setPaymentMethod('gcash')} className={`py-1.5 rounded-lg ${paymentMethod === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setPaymentMethod('cash')} className={`py-1.5 rounded-lg ${paymentMethod === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
                   {paymentMethod === 'gcash' && <div><input type="text" value={gcashRef} onChange={e => setGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono" /></div>}
                   <button type="submit" disabled={submittingLeague} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Confirm League Registration</button>
@@ -1459,7 +1542,9 @@
       const [selectedOrganizerCourt, setSelectedOrganizerCourt] = React.useState(null);
       const [calendarStartDate, setCalendarStartDate] = React.useState(new Date());
       const [allBookingsForMatrix, setAllBookingsForMatrix] = React.useState([]);
-      const [selectedGridSlot, setSelectedGridSlot] = React.useState(null);
+      
+      const [startSlotOrg, setStartSlotOrg] = React.useState(null);
+      const [endSlotOrg, setEndSlotOrg] = React.useState(null);
 
       const [showOrganizerDetailsModal, setShowOrganizerDetailsModal] = React.useState(false);
       const [orgResName, setOrgResName] = React.useState(currentUser?.full_name || '');
@@ -1467,6 +1552,10 @@
       const [orgResPayment, setOrgResPayment] = React.useState('gcash');
       const [orgResGcashRef, setOrgResGcashRef] = React.useState('');
       const [submittingOrganizerBooking, setSubmittingOrganizerBooking] = React.useState(false);
+
+      const [editingLeagueItem, setEditingLeagueItem] = React.useState(null);
+      const [editLeagueTitleInput, setEditLeagueTitleInput] = React.useState('');
+      const [editLeagueFeeInput, setEditLeagueFeeInput] = React.useState('');
 
       const [myProposals, setMyProposals] = React.useState([]);
       const [leagueRegistrations, setLeagueRegistrations] = React.useState([]);
@@ -1572,6 +1661,36 @@
         }
       };
 
+      const handleOpenEditLeagueModal = (item) => {
+        setEditingLeagueItem(item);
+        const rawProg = item.course_program.replace('🏆 LEAGUE: ', '');
+        const feeMatch = rawProg.match(/\(Fee: ₱(\d+)\)/);
+        const titlePart = feeMatch ? rawProg.replace(feeMatch[0], '').trim() : rawProg.trim();
+        setEditLeagueTitleInput(titlePart);
+        setEditLeagueFeeInput(feeMatch ? feeMatch[1] : '500');
+      };
+
+      const handleSaveEditedLeague = async (e) => {
+        e.preventDefault();
+        if (!editingLeagueItem) return;
+        const sportMatch = editingLeagueItem.course_program.match(/\[(.*?)\]/);
+        const sportName = sportMatch ? sportMatch[1] : 'Basketball';
+        const courtMatch = editingLeagueItem.course_program.match(/@\s*(.*?)\s*\(Fee/);
+        const courtNameVal = courtMatch ? courtMatch[1].trim() : 'SuperDome';
+
+        const updatedLigaName = `🏆 LEAGUE: [${sportName}] ${editLeagueTitleInput.trim()} @ ${courtNameVal} (Fee: ₱${editLeagueFeeInput})`;
+        const { error } = await supabase.from('enrollments').update({ course_program: updatedLigaName }).eq('id', editingLeagueItem.id);
+        
+        if (error) {
+          showNotification(`Update failed: ${error.message}`, 'error');
+        } else {
+          safeAuditLog(currentUser, 'ORGANIZER_UPDATE_LEAGUE', { id: editingLeagueItem.id, newTitle: editLeagueTitleInput });
+          showNotification('League updated successfully!', 'success');
+          setEditingLeagueItem(null);
+          fetchOrganizerData();
+        }
+      };
+
       const getSevenDays = () => {
         const days = [];
         for (let i = 0; i < 7; i++) {
@@ -1582,7 +1701,7 @@
         return days;
       };
 
-      const getSlotStatus = (courtName, dateStr, time24) => {
+      const getSlotStatusOrg = (courtName, dateStr, time24) => {
         const currentSlotMinutes = parseTimeToMinutes(time24);
         for (const b of allBookingsForMatrix) {
           if (!b.course_program.includes(courtName) || !b.semester) continue;
@@ -1614,21 +1733,67 @@
         return 'green';
       };
 
+      const handleSlotClickOrg = (dObj, time24, slotLabel, dayIdx, timeIdx) => {
+        const status = getSlotStatusOrg(selectedOrganizerCourt.name, dObj.dateStr, time24);
+        if (status === 'red') return;
+
+        const clickedSlot = { date: dObj.dateStr, time24, label: slotLabel, dayIndex: dayIdx, timeIndex: timeIdx };
+
+        if (!startSlotOrg || (startSlotOrg && endSlotOrg)) {
+          setStartSlotOrg(clickedSlot);
+          setEndSlotOrg(null);
+        } else if (startSlotOrg && !endSlotOrg) {
+          if (dayIdx < startSlotOrg.dayIndex || (dayIdx === startSlotOrg.dayIndex && timeIdx <= startSlotOrg.timeIndex)) {
+            setStartSlotOrg(clickedSlot);
+          } else {
+            setEndSlotOrg(clickedSlot);
+          }
+        }
+      };
+
+      const getSlotButtonAppearanceOrg = (dObj, time24, dayIdx, timeIdx) => {
+        const status = getSlotStatusOrg(selectedOrganizerCourt.name, dObj.dateStr, time24);
+        if (status === 'red') return { text: 'Booked', bg: 'bg-red-50 text-red-600 border-red-200 opacity-80 cursor-not-allowed' };
+        if (status === 'yellow') return { text: 'Pending', bg: 'bg-amber-50 text-amber-600 border-amber-200' };
+
+        const isStart = startSlotOrg && startSlotOrg.date === dObj.dateStr && startSlotOrg.time24 === time24;
+        const isEnd = endSlotOrg && endSlotOrg.date === dObj.dateStr && endSlotOrg.time24 === time24;
+
+        if (isStart) return { text: 'Start Time', bg: 'bg-emerald-700 text-white font-extrabold ring-2 ring-emerald-400' };
+        if (isEnd) return { text: 'End Time', bg: 'bg-amber-600 text-white font-extrabold ring-2 ring-amber-400' };
+
+        if (startSlotOrg && endSlotOrg) {
+          const startTimeVal = startSlotOrg.dayIndex * 24 + startSlotOrg.timeIndex;
+          const endTimeVal = endSlotOrg.dayIndex * 24 + endSlotOrg.timeIndex;
+          const currVal = dayIdx * 24 + timeIdx;
+          if (currVal > startTimeVal && currVal < endTimeVal) {
+            return { text: 'Reserved Range', bg: 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold' };
+          }
+        }
+
+        return { text: 'Available', bg: 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100' };
+      };
+
       const handleOrganizerFinalReservationSubmit = async (e) => {
         e.preventDefault();
-        if (!selectedOrganizerCourt || !selectedGridSlot) return;
+        if (!selectedOrganizerCourt || !startSlotOrg) return;
         if (!orgResName.trim() || !orgResContact.trim()) { showNotification('Name & contact required.', 'error'); return; }
         if (orgResPayment === 'gcash' && !orgResGcashRef.trim()) { showNotification('GCash reference no. required.', 'error'); return; }
 
         setSubmittingOrganizerBooking(true);
         try {
-          const scheduleString = `${selectedGridSlot.date} @ ${selectedGridSlot.time}`;
+          const startTimeStr = `${startSlotOrg.date} @ ${startSlotOrg.time24}`;
+          const endTimeStr = endSlotOrg ? endSlotOrg.time24 : (startSlotOrg.time24 === '23:00' ? '23:59' : timeSlots[Math.min(timeSlots.indexOf(startSlotOrg.label) + 1, timeSlots.length - 1)]);
+          const scheduleString = `${startTimeStr} to ${endTimeStr}`;
+
           const formattedName = `${selectedOrganizerCourt.name} | Organizer: ${orgResName.trim()} (Contact: ${orgResContact.trim()}) | Pay: ${orgResPayment.toUpperCase()}${orgResPayment === 'gcash' ? ` [Ref: ${orgResGcashRef.trim()}]` : ''}`;
+          
           await supabase.from('enrollments').insert({ student_id: currentUser.id, course_program: formattedName, academic_year: '2026', semester: scheduleString, status: 'Pending' });
           safeAuditLog(currentUser, 'ORGANIZER_REQUEST_COURT', { court: selectedOrganizerCourt.name, time: scheduleString });
           showNotification('Court reservation request sent to Admin successfully!', 'success');
           setShowOrganizerDetailsModal(false);
-          setSelectedGridSlot(null);
+          setStartSlotOrg(null);
+          setEndSlotOrg(null);
           setSelectedOrganizerCourt(null);
           setOrgResGcashRef('');
           fetchOrganizerData();
@@ -1647,6 +1812,31 @@
 
       return (
         <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
+          {editingLeagueItem && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+                  <h3 className="text-xs font-bold text-slate-900">✏️ Edit League Details</h3>
+                  <button onClick={() => setEditingLeagueItem(null)} className="text-slate-400 font-bold">✕</button>
+                </div>
+                <form onSubmit={handleSaveEditedLeague} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">League Title</label>
+                    <input type="text" value={editLeagueTitleInput} onChange={(e) => setEditLeagueTitleInput(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-semibold" required />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Registration Fee (₱)</label>
+                    <input type="number" value={editLeagueFeeInput} onChange={(e) => setEditLeagueFeeInput(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900" required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button type="button" onClick={() => setEditingLeagueItem(null)} className="py-2.5 px-3 bg-slate-100 text-slate-700 rounded-xl font-semibold">Cancel</button>
+                    <button type="submit" className="py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Save Changes</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {activeNavTab === 'create_league' ? (
             <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm my-auto">
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -1829,6 +2019,7 @@
                 )}
               </div>
 
+              {/* Your League Activity */}
               <div className="space-y-4 mt-6">
                 <div className="flex justify-between items-center">
                   <h3 className="text-sm font-bold text-slate-900">Your league activity</h3>
@@ -1850,10 +2041,9 @@
                         </div>
                         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
                           <div className="text-right">
-                            <p className="text-xs font-bold text-slate-900">19/24 players</p>
                             <span className="inline-block px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full text-[9px] font-bold">Approved</span>
                           </div>
-                          <button onClick={() => showNotification('League settings editable.', 'info')} className="px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold">Edit</button>
+                          <button onClick={() => handleOpenEditLeagueModal(item)} className="px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold shadow-sm">Edit</button>
                         </div>
                       </div>
                     ))}
@@ -1866,15 +2056,22 @@
           {selectedOrganizerCourt && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-3">
               <div className="w-full max-w-2xl bg-white border border-slate-200 rounded-3xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
-                <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                  <h3 className="text-xs font-bold text-slate-900">📅 Slot Matrix: {selectedOrganizerCourt.name}</h3>
-                  <button onClick={() => setSelectedOrganizerCourt(null)} className="text-slate-400 font-bold">✕</button>
+                <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                  <div className="space-y-0.5">
+                    <h3 className="text-xs font-bold text-slate-900">🏟️ Slot Range Selection: {selectedOrganizerCourt.name} (₱{selectedOrganizerCourt.rate}/hr)</h3>
+                    <p className="text-[10px] text-emerald-600 font-bold">
+                      💡 {!startSlotOrg ? 'Click slot 1 for Start Time.' : !endSlotOrg ? 'Click slot 2 for End Time.' : `Start: ${startSlotOrg.date} ${startSlotOrg.label} ➔ End: ${endSlotOrg.date} ${endSlotOrg.label}`}
+                    </p>
+                  </div>
+                  <button onClick={() => { setSelectedOrganizerCourt(null); setStartSlotOrg(null); setEndSlotOrg(null); }} className="text-slate-400 font-bold">✕</button>
                 </div>
+                
                 <div className="flex justify-between items-center bg-slate-100 p-2 rounded-xl text-xs font-bold text-slate-700">
                   <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() - 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-white rounded-lg shadow-sm">‹ Prev</button>
                   <span className="text-emerald-600">Ormoc Court Timetable</span>
                   <button onClick={() => { const d = new Date(calendarStartDate); d.setDate(d.getDate() + 7); setCalendarStartDate(d); }} className="px-3 py-1 bg-white rounded-lg shadow-sm">Next ›</button>
                 </div>
+
                 <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-slate-50 p-2">
                   <table className="w-full text-left border-collapse text-[11px]">
                     <thead>
@@ -1884,20 +2081,17 @@
                       </tr>
                     </thead>
                     <tbody>
-                      {timeSlots.map(slotLabel => {
+                      {timeSlots.map((slotLabel, timeIdx) => {
                         const time24 = slotTo24Hr(slotLabel);
                         return (
                           <tr key={slotLabel} className="border-b border-slate-100">
                             <td className="p-2 text-slate-500 font-mono text-[10px]">{slotLabel}</td>
-                            {getSevenDays().map(d => {
-                              const status = getSlotStatus(selectedOrganizerCourt.name, d.dateStr, time24);
-                              const isChosen = selectedGridSlot?.date === d.dateStr && selectedGridSlot?.time === time24;
-                              let bg = status === 'red' ? 'bg-red-50 text-red-600 border-red-200 opacity-80' : status === 'yellow' ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100';
-                              if (isChosen) bg = 'bg-emerald-600 text-white font-extrabold ring-2 ring-emerald-400';
+                            {getSevenDays().map((dObj, dayIdx) => {
+                              const slotApp = getSlotButtonAppearanceOrg(dObj, time24, dayIdx, timeIdx);
                               return (
-                                <td key={d.dateStr} className="p-1.5 text-center">
-                                  <button type="button" onClick={() => { if (status !== 'red') setSelectedGridSlot({ date: d.dateStr, time: time24, label: slotLabel }); }} className={`w-full py-2 rounded-xl border text-[10px] font-bold ${bg}`}>
-                                    {status === 'red' ? 'Booked' : status === 'yellow' ? 'Pending' : 'Available'}
+                                <td key={dObj.dateStr} className="p-1.5 text-center">
+                                  <button type="button" onClick={() => handleSlotClickOrg(dObj, time24, slotLabel, dayIdx, timeIdx)} className={`w-full py-2 rounded-xl border text-[10px] font-bold transition-all ${slotApp.bg}`}>
+                                    {slotApp.text}
                                   </button>
                                 </td>
                               );
@@ -1908,10 +2102,18 @@
                     </tbody>
                   </table>
                 </div>
-                {selectedGridSlot && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex justify-between items-center text-xs">
-                    <span className="text-emerald-800 font-semibold">{selectedGridSlot.date} @ {selectedGridSlot.label}</span>
-                    <button onClick={() => setShowOrganizerDetailsModal(true)} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded-xl shadow">Confirm Request ›</button>
+
+                {startSlotOrg && (
+                  <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-3 text-xs">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[11px] text-emerald-900 bg-white p-2.5 rounded-xl border border-emerald-100">
+                      <div><span className="text-[9px] text-slate-400 block uppercase font-bold">Start Date</span>{startSlotOrg.date}</div>
+                      <div><span className="text-[9px] text-slate-400 block uppercase font-bold">Time In</span>{startSlotOrg.label}</div>
+                      <div><span className="text-[9px] text-slate-400 block uppercase font-bold">End Date</span>{endSlotOrg ? endSlotOrg.date : startSlotOrg.date}</div>
+                      <div><span className="text-[9px] text-slate-400 block uppercase font-bold">Time Out</span>{endSlotOrg ? endSlotOrg.label : (timeSlots[Math.min(timeSlots.indexOf(startSlotOrg.label) + 1, timeSlots.length - 1)] || '18:00')}</div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button onClick={() => setShowOrganizerDetailsModal(true)} className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow">Proceed to Request Details ›</button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1925,7 +2127,7 @@
                 <form onSubmit={handleOrganizerFinalReservationSubmit} className="space-y-3 text-xs">
                   <div><label className="text-slate-600 font-bold block mb-1">Organizer Name</label><input type="text" value={orgResName} onChange={e => setOrgResName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
                   <div><label className="text-slate-600 font-bold block mb-1">Contact Number</label><input type="text" value={orgResContact} onChange={e => setOrgResContact(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
-                  <div><label className="text-slate-600 font-bold block mb-1">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setOrgResPayment('gcash')} className={`py-1.5 rounded-lg ${orgResPayment === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setOrgResPayment('cash')} className={`py-1.5 rounded-lg ${orgResPayment === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
+                  <div><label className="text-slate-600 font-bold block mb-1">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setOrgResPayment('gcash')} className={`py-1.5 rounded-lg ${orgResPayment === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setResPayment('cash')} className={`py-1.5 rounded-lg ${resPayment === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
                   {orgResPayment === 'gcash' && <div><input type="text" value={orgResGcashRef} onChange={e => setOrgResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono" /></div>}
                   <button type="submit" disabled={submittingOrganizerBooking} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Submit Request</button>
                 </form>
@@ -2160,7 +2362,7 @@
                   ) : isOrganizer ? (
                     <>
                       <button onClick={() => setActiveNavTab('approvals')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'approvals' ? 'text-emerald-600' : 'text-slate-400'}`}><span>📊</span><span>Overview</span></button>
-                      <button onClick={() => setActiveNavTab('request_court')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'request_court' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏟️</span><span>Request</span></button>
+                      <button onClick={() => setActiveNavTab('request_court')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'request_court' ? 'text-emerald-600' : 'text-slate-400'}`}><span className="text-sm">🏟️</span><span>Request</span></button>
                       <button onClick={() => setActiveNavTab('create_league')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'create_league' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏆</span><span>Leagues</span></button>
                       <button onClick={() => setActiveNavTab('profile')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'profile' ? 'text-emerald-600' : 'text-slate-400'}`}><span>👤</span><span>Profile</span></button>
                     </>
