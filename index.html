@@ -310,9 +310,9 @@
               const nextSet = failedSets + 1;
               setFailedSets(nextSet);
 
-              let lockDurationSeconds = 60; // 1 min
-              if (nextSet === 2) lockDurationSeconds = 300; // 5 min
-              else if (nextSet >= 3) lockDurationSeconds = 900; // 15 min
+              let lockDurationSeconds = 60;
+              if (nextSet === 2) lockDurationSeconds = 300;
+              else if (nextSet >= 3) lockDurationSeconds = 900;
 
               setIsLockedOut(true);
               setLockoutTimer(lockDurationSeconds);
@@ -327,7 +327,7 @@
             await supabase.auth.signOut();
             generateNewCaptcha();
             setShowCaptchaModal(true);
-            showNotification('Tamang password ang nailagay mo, ngunit kinakailangan mong kumpletuhin ang CAPTCHA dahil sa mga nakaraang failed login attempts.', 'info');
+            showNotification('You entered the correct password, but please complete the CAPTCHA due to previous failed login attempts.', 'info');
             return;
           }
 
@@ -361,7 +361,7 @@
       const handleVerifyCaptchaAndLogin = async (e) => {
         e.preventDefault();
         if (parseInt(captchaInput, 10) !== captchaQuestion.answer) {
-          showNotification('Mali ang sagot sa CAPTCHA. Subukan muli.', 'error');
+          showNotification('Incorrect CAPTCHA answer. Please try again.', 'error');
           generateNewCaptcha();
           return;
         }
@@ -441,15 +441,25 @@
         setForgotStep(3);
       };
 
-      const handleFinalResetPassword = (e) => {
+      const handleFinalResetPassword = async (e) => {
         e.preventDefault();
         if (!IAS_PASSWORD_REGEX.test(newPassword)) { showNotification('Password must have min 8 chars, uppercase, lowercase, number & special character.', 'error'); return; }
-        showNotification('Password successfully reset! Please sign in with your new password.', 'success');
-        safeAuditLog({ email: forgotEmail }, 'PASSWORD_RESET_SUCCESS', {});
-        setShowForgotModal(false);
-        setForgotStep(1);
-        setForgotEmail('');
-        setNewPassword('');
+        
+        try {
+          // IAS Compliance: Terminate active sessions upon reset/change
+          await supabase.auth.updateUser({ password: newPassword });
+          await supabase.auth.signOut();
+          
+          showNotification('Password successfully reset! Other active sessions logged out. Please sign in.', 'success');
+          safeAuditLog({ email: forgotEmail }, 'PASSWORD_RESET_SUCCESS_AND_SESSIONS_REVOKED', {});
+          setShowForgotModal(false);
+          setForgotStep(1);
+          setForgotEmail('');
+          setNewPassword('');
+          setActiveTab('login');
+        } catch (err) {
+          showNotification('Error updating password.', 'error');
+        }
       };
 
       const hasLength = regPassword.length >= 8;
@@ -467,12 +477,12 @@
                   <h3 className="text-xs font-bold text-slate-900">🛡️ Security CAPTCHA Verification</h3>
                   <button onClick={() => setShowCaptchaModal(false)} className="text-slate-400 font-bold">✕</button>
                 </div>
-                <p className="text-xs text-slate-600">Nailagay mo ang iyong tamang password, ngunit dahil sa mga nakaraang failed attempts, sagutin muna ang sumusunod na tanong:</p>
+                <p className="text-xs text-slate-600">You entered the correct password, but due to previous failed attempts, please solve the math challenge below:</p>
                 <form onSubmit={handleVerifyCaptchaAndLogin} className="space-y-3 text-xs">
                   <div className="p-3 bg-slate-100 rounded-xl text-center font-bold text-slate-800 text-sm">
                     {captchaQuestion.num1} + {captchaQuestion.num2} = ?
                   </div>
-                  <input type="number" value={captchaInput} onChange={e => setCaptchaInput(e.target.value)} placeholder="Ilagay ang sagot" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-mono text-sm text-slate-900" required />
+                  <input type="number" value={captchaInput} onChange={e => setCaptchaInput(e.target.value)} placeholder="Enter answer" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-center font-mono text-sm text-slate-900" required />
                   <button type="submit" className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Verify & Sign In</button>
                 </form>
               </div>
@@ -519,13 +529,13 @@
                 {forgotStep === 3 && (
                   <form onSubmit={handleFinalResetPassword} className="space-y-3 text-xs">
                     <div>
-                      <label className="text-slate-600 font-bold block mb-1">New Password</label>
+                      <label className="text-slate-600 font-bold block mb-1">New Secure Password</label>
                       <div className="relative">
                         <input type={showNewPassword ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 pr-10" />
                         <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-3 top-2.5 text-slate-400 text-[10px] font-bold">{showNewPassword ? 'Hide' : 'Show'}</button>
                       </div>
                     </div>
-                    <button type="submit" className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Update Password</button>
+                    <button type="submit" className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Update & Logout Sessions</button>
                   </form>
                 )}
               </div>
@@ -581,7 +591,7 @@
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Password</label>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Password (Secure Hashed)</label>
                 <div className="relative">
                   <input type={showRegPassword ? 'text' : 'password'} value={regPassword} onChange={e => setRegPassword(e.target.value)} placeholder="••••••••" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 pr-12" />
                   <button type="button" onClick={() => setShowRegPassword(!showRegPassword)} className="absolute right-3 top-2.5 text-[10px] font-bold text-slate-400">{showRegPassword ? 'Hide' : 'Show'}</button>
@@ -619,6 +629,11 @@
       const [courtRate, setCourtRate] = React.useState('200');
       const [courtImagePreview, setCourtImagePreview] = React.useState('');
       const [addingCourt, setAddingCourt] = React.useState(false);
+
+      const [editingCourt, setEditingCourt] = React.useState(null);
+      const [editCourtName, setEditCourtName] = React.useState('');
+      const [editCourtLocation, setEditCourtLocation] = React.useState('');
+      const [editCourtRate, setEditCourtRate] = React.useState('');
 
       React.useEffect(() => {
         fetchProposals();
@@ -689,6 +704,34 @@
           showNotification('Error adding court.', 'error');
         } finally {
           setAddingCourt(false);
+        }
+      };
+
+      const handleOpenEditCourtModal = (courtObj) => {
+        setEditingCourt(courtObj);
+        setEditCourtName(courtObj.name);
+        setEditCourtLocation(courtObj.location);
+        setEditCourtRate(courtObj.rate);
+      };
+
+      const handleSaveEditedCourt = async (e) => {
+        e.preventDefault();
+        if (!editingCourt) return;
+        try {
+          const rawId = editingCourt.id.replace('approved_court_', '');
+          const newCourtTag = `🏟️ NEW COURT PROPOSAL: ${editCourtName.trim()} (₱${editCourtRate}/hr) - Basketball @ ${editCourtLocation.trim()}`;
+          const { error } = await supabase.from('enrollments').update({ course_program: newCourtTag, semester: `Loc: ${editCourtLocation.trim()}` }).eq('id', rawId);
+          if (error) {
+            showNotification(`Failed to update court: ${error.message}`, 'error');
+          } else {
+            safeAuditLog(currentUser, 'ADMIN_UPDATE_COURT', { courtId: rawId, newName: editCourtName.trim() });
+            showNotification('Court updated successfully!', 'success');
+            setEditingCourt(null);
+            fetchProposals();
+            if (refreshCourts) refreshCourts();
+          }
+        } catch (err) {
+          showNotification('Error updating court.', 'error');
         }
       };
 
@@ -774,6 +817,35 @@
 
       return (
         <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
+          {editingCourt && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+                  <h3 className="text-xs font-bold text-slate-900">✏️ Edit Court Facility</h3>
+                  <button onClick={() => setEditingCourt(null)} className="text-slate-400 font-bold">✕</button>
+                </div>
+                <form onSubmit={handleSaveEditedCourt} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Court Name</label>
+                    <input type="text" value={editCourtName} onChange={(e) => setEditCourtName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-semibold" required />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Location</label>
+                    <input type="text" value={editCourtLocation} onChange={(e) => setEditCourtLocation(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900" required />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Rate (₱/hr)</label>
+                    <input type="number" value={editCourtRate} onChange={(e) => setEditCourtRate(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900" required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button type="button" onClick={() => setEditingCourt(null)} className="py-2.5 px-3 bg-slate-100 text-slate-700 rounded-xl font-semibold">Cancel</button>
+                    <button type="submit" className="py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Save Changes</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {activeSubTab === 'add_court' ? (
             <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm my-auto">
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -895,7 +967,7 @@
                 <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
               {availableCourts.length === 0 ? (
-                <p className="text-xs text-slate-500 py-8 text-center">Wala pang nakatalang korte.</p>
+                <p className="text-xs text-slate-500 py-8 text-center">No courts recorded yet.</p>
               ) : (
                 <div className="space-y-3">
                   {availableCourts.map(c => (
@@ -904,7 +976,10 @@
                         <p className="font-bold text-slate-900 text-sm">{c.name}</p>
                         <p className="text-xs text-slate-500">📍 {c.location} • <span className="text-emerald-600 font-semibold">₱{c.rate}/hr</span></p>
                       </div>
-                      <span className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full text-xs font-bold">Active</span>
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full text-xs font-bold">Active</span>
+                        <button onClick={() => handleOpenEditCourtModal(c)} className="px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold shadow-sm">Edit</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -917,7 +992,7 @@
                 <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
               {activeLeaguesList.length === 0 ? (
-                <p className="text-xs text-slate-500 py-8 text-center">Wala pang active na liga sa ngayon.</p>
+                <p className="text-xs text-slate-500 py-8 text-center">No active leagues at the moment.</p>
               ) : (
                 <div className="space-y-3">
                   {activeLeaguesList.map(l => (
@@ -939,7 +1014,7 @@
                 <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
               {courtBookingsList.length === 0 ? (
-                <p className="text-xs text-slate-500 py-8 text-center">Wala pang court booking records.</p>
+                <p className="text-xs text-slate-500 py-8 text-center">No court booking records.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs">
@@ -970,7 +1045,7 @@
                 <button onClick={() => setActiveSubTab('dashboard')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
               {pendingCourtBookingsList.length === 0 ? (
-                <p className="text-xs text-slate-500 py-8 text-center">Wala nang pending court reservation na naghihintay ng approval.</p>
+                <p className="text-xs text-slate-500 py-8 text-center">No pending court reservations awaiting approval.</p>
               ) : (
                 <div className="space-y-3">
                   {pendingCourtBookingsList.map(p => (
@@ -1034,7 +1109,7 @@
                   <button onClick={fetchProposals} className="text-xs text-emerald-600 hover:underline">Refresh</button>
                 </h3>
                 {pendingCourtBookingsList.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-6 text-center">Walang pending na request para sa mga court.</p>
+                  <p className="text-xs text-slate-500 py-6 text-center">No pending court requests at the moment.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
@@ -1318,7 +1393,7 @@
                 <button onClick={() => setActiveNavTab('home')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
               {openLeagues.length === 0 ? (
-                <p className="text-xs text-slate-500 py-6 text-center">Wala pang nabuong liga mula sa mga organizer.</p>
+                <p className="text-xs text-slate-500 py-6 text-center">No leagues created by organizers yet.</p>
               ) : (
                 <div className="space-y-3">
                   {openLeagues.map(l => (
@@ -1377,7 +1452,7 @@
                   
                   {viewMode === 'leagues_joined' ? (
                     joinedLeaguesList.length === 0 ? (
-                      <p className="text-xs text-slate-500 py-6 text-center">Wala ka pang sinalihang liga.</p>
+                      <p className="text-xs text-slate-500 py-6 text-center">You haven't joined any leagues yet.</p>
                     ) : (
                       <div className="space-y-3">
                         {joinedLeaguesList.map(item => (
@@ -1393,7 +1468,7 @@
                     )
                   ) : (
                     courtBookingsOnlyList.length === 0 ? (
-                      <p className="text-xs text-slate-500 py-6 text-center">Wala ka pang court booking.</p>
+                      <p className="text-xs text-slate-500 py-6 text-center">You have no court bookings yet.</p>
                     ) : (
                       <div className="space-y-3">
                         {courtBookingsOnlyList.map(b => (
@@ -1488,7 +1563,7 @@
                   <div><label className="text-slate-600 font-bold block mb-1">Your Name</label><input type="text" value={resName} onChange={e => setResName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
                   <div><label className="text-slate-600 font-bold block mb-1">Contact Number</label><input type="text" value={resContact} onChange={e => setResContact(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
                   <div><label className="text-slate-600 font-bold block mb-1">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setResPayment('gcash')} className={`py-1.5 rounded-lg ${resPayment === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setResPayment('cash')} className={`py-1.5 rounded-lg ${resPayment === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
-                  {resPayment === 'gcash' && <div><input type="text" value={resGcashRef} onChange={e => setResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono" /></div>}
+                  {resPayment === 'gcash' && <div><input type="text" value={resGcashRef} onChange={e => setResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono" /></div>}
                   <button type="submit" disabled={submittingBooking} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Complete Reservation</button>
                 </form>
               </div>
@@ -1810,6 +1885,135 @@
       const myPendingRequestsList = myReservationsList.filter(p => p.status === 'Pending' || p.status === 'submitted');
       const myApprovedReservationsList = myReservationsList.filter(p => p.status === 'Approved' || p.status === 'dean_approved');
 
+      if (activeNavTab === 'request_court') {
+        return (
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4 max-w-xl mx-auto w-full my-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">🏟️ Request a Court Reservation (Slot Matrix)</h3>
+              <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+            </div>
+            {availableCourts.length === 0 ? <p className="text-xs text-slate-500 py-6 text-center">No approved courts available yet.</p> : (
+              <div className="space-y-3">
+                {availableCourts.map(c => (
+                  <div key={c.id} onClick={() => setSelectedOrganizerCourt(c)} className="p-4 bg-slate-50 border border-slate-200 hover:border-emerald-500 rounded-2xl cursor-pointer flex justify-between items-center transition-all">
+                    <div>
+                      <p className="font-bold text-slate-950 text-sm">{c.name}</p>
+                      <p className="text-xs text-slate-500">📍 {c.location} • <span className="text-emerald-600 font-semibold">₱{c.rate}/hr</span></p>
+                    </div>
+                    <span className="text-xs font-bold text-emerald-600">Open Matrix ›</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {selectedOrganizerCourt && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-3">
+                <div className="w-full max-w-2xl bg-white border border-slate-200 rounded-3xl p-5 space-y-4 max-h-[92vh] overflow-y-auto shadow-2xl">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                    <div className="space-y-0.5">
+                      <h3 className="text-xs font-bold text-slate-900">🏟️ Slot Range Selection: {selectedOrganizerCourt.name} (₱{selectedOrganizerCourt.rate}/hr)</h3>
+                    </div>
+                    <button onClick={() => setSelectedOrganizerCourt(null)} className="text-slate-400 font-bold">✕</button>
+                  </div>
+                  <div className="overflow-x-auto border border-slate-200 rounded-2xl bg-slate-50 p-2">
+                    <table className="w-full text-left border-collapse text-[11px]">
+                      <thead>
+                        <tr>
+                          <th className="p-2 border-b border-slate-200 text-slate-500">Time</th>
+                          {getSevenDays().map(d => <th key={d.dateStr} className="p-2 border-b border-slate-200 text-center text-slate-900 min-w-[90px]">{d.label}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {timeSlots.map((slotLabel, timeIdx) => {
+                          const time24 = slotTo24Hr(slotLabel);
+                          return (
+                            <tr key={slotLabel} className="border-b border-slate-100">
+                              <td className="p-2 text-slate-500 font-mono text-[10px]">{slotLabel}</td>
+                              {getSevenDays().map((dObj, dayIdx) => {
+                                const slotApp = getSlotButtonAppearanceOrg(dObj, time24, dayIdx, timeIdx);
+                                return (
+                                  <td key={dObj.dateStr} className="p-1.5 text-center">
+                                    <button type="button" onClick={() => handleSlotClickOrg(dObj, time24, slotLabel, dayIdx, timeIdx)} className={`w-full py-2 rounded-xl border text-[10px] font-bold transition-all ${slotApp.bg}`}>
+                                      {slotApp.text}
+                                    </button>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {startSlotOrg && (
+                    <div className="flex justify-end pt-2">
+                      <button onClick={() => setShowOrganizerDetailsModal(true)} className="px-5 py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow text-xs">Proceed to Request Details ›</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {showOrganizerDetailsModal && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4">
+                <div className="w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 space-y-4 shadow-2xl">
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-2"><h3 className="text-xs font-bold text-slate-900">📝 Request Details</h3><button onClick={() => setShowOrganizerDetailsModal(false)} className="text-slate-400 font-bold">✕</button></div>
+                  <form onSubmit={handleOrganizerFinalReservationSubmit} className="space-y-3 text-xs">
+                    <div><label className="text-slate-600 font-bold block mb-1">Organizer Name</label><input type="text" value={orgResName} onChange={e => setOrgResName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
+                    <div><label className="text-slate-600 font-bold block mb-1">Contact Number</label><input type="text" value={orgResContact} onChange={e => setOrgResContact(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
+                    <div><label className="text-slate-600 font-bold block mb-1">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setOrgResPayment('gcash')} className={`py-1.5 rounded-lg ${orgResPayment === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setOrgResPayment('cash')} className={`py-1.5 rounded-lg ${orgResPayment === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
+                    {orgResPayment === 'gcash' && <div><input type="text" value={orgResGcashRef} onChange={e => setOrgResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono" /></div>}
+                    <button type="submit" disabled={submittingOrganizerBooking} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Submit Request</button>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      if (activeNavTab === 'create_league') {
+        return (
+          <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm my-auto w-full">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900">🏆 Create & Publish League</h3>
+              <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+            </div>
+            <form onSubmit={handleCreateLiga} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">League Name</label>
+                <input type="text" value={ligaTitle} onChange={e => setLigaTitle(e.target.value)} placeholder="Ormoc Basketball Cup" className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Sport</label>
+                  <select value={selectedSport} onChange={e => setSelectedSport(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900">
+                    <option value="Basketball">Basketball</option>
+                    <option value="Volleyball">Volleyball</option>
+                    <option value="Badminton">Badminton</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Approved Court</label>
+                  <select value={selectedCourt} onChange={handleCourtChange} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900">
+                    {organizerApprovedCourts.length === 0 ? <option value="">No approved courts yet</option> : organizerApprovedCourts.map((cName, idx) => <option key={idx} value={cName}>{cName}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Registration Fee (₱)</label>
+                  <input type="number" value={ligaFee} onChange={e => setLigaFee(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Tournament Date (Auto-filled)</label>
+                  <input type="date" value={reserveDate} onChange={e => setReserveDate(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" />
+                </div>
+              </div>
+              <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow">Publish League</button>
+            </form>
+          </div>
+        );
+      }
+
       return (
         <div className="p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6 overflow-y-auto flex-1">
           {editingLeagueItem && (
@@ -1837,74 +2041,14 @@
             </div>
           )}
 
-          {activeNavTab === 'create_league' ? (
-            <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm my-auto">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-bold text-slate-900">🏆 Create & Publish League</h3>
-                <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
-              </div>
-              <form onSubmit={handleCreateLiga} className="space-y-4 text-xs">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">League Name</label>
-                  <input type="text" value={ligaTitle} onChange={e => setLigaTitle(e.target.value)} placeholder="Ormoc Basketball Cup" className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Sport</label>
-                    <select value={selectedSport} onChange={e => setSelectedSport(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900">
-                      <option value="Basketball">Basketball</option>
-                      <option value="Volleyball">Volleyball</option>
-                      <option value="Badminton">Badminton</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Approved Court</label>
-                    <select value={selectedCourt} onChange={handleCourtChange} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900">
-                      {organizerApprovedCourts.length === 0 ? <option value="">No approved courts yet</option> : organizerApprovedCourts.map((cName, idx) => <option key={idx} value={cName}>{cName}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Registration Fee (₱)</label>
-                    <input type="number" value={ligaFee} onChange={e => setLigaFee(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Tournament Date (Auto-filled)</label>
-                    <input type="date" value={reserveDate} onChange={e => setReserveDate(e.target.value)} className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" />
-                  </div>
-                </div>
-                <button type="submit" className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl shadow">Publish League</button>
-              </form>
-            </div>
-          ) : activeNavTab === 'request_court' ? (
-            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4 max-w-xl mx-auto w-full my-auto">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                <h3 className="text-sm font-bold text-slate-900">🏟️ Request a Court Reservation (Slot Matrix)</h3>
-                <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
-              </div>
-              {availableCourts.length === 0 ? <p className="text-xs text-slate-500 py-6 text-center">No approved courts available yet.</p> : (
-                <div className="space-y-3">
-                  {availableCourts.map(c => (
-                    <div key={c.id} onClick={() => setSelectedOrganizerCourt(c)} className="p-4 bg-slate-50 border border-slate-200 hover:border-emerald-500 rounded-2xl cursor-pointer flex justify-between items-center transition-all">
-                      <div>
-                        <p className="font-bold text-slate-950 text-sm">{c.name}</p>
-                        <p className="text-xs text-slate-500">📍 {c.location} • <span className="text-emerald-600 font-semibold">₱{c.rate}/hr</span></p>
-                      </div>
-                      <span className="text-xs font-bold text-emerald-600">Open Matrix ›</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : activeNavTab === 'reservations_view' ? (
+          {activeNavTab === 'reservations_view' ? (
             <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
               <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                 <h3 className="text-sm font-bold text-slate-900">🗓️ My Approved Reservations</h3>
                 <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
               {myApprovedReservationsList.length === 0 ? (
-                <p className="text-xs text-slate-500 py-8 text-center">Wala ka pang na-approve na court reservation.</p>
+                <p className="text-xs text-slate-500 py-8 text-center">You have no approved court reservations.</p>
               ) : (
                 <div className="space-y-3">
                   {myApprovedReservationsList.map(item => (
@@ -1926,7 +2070,7 @@
                 <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
               </div>
               {myPendingRequestsList.length === 0 ? (
-                <p className="text-xs text-slate-500 py-8 text-center">Wala kang kasalukuyang pending request.</p>
+                <p className="text-xs text-slate-500 py-8 text-center">You have no pending requests.</p>
               ) : (
                 <div className="space-y-3">
                   {myPendingRequestsList.map(item => (
@@ -1936,6 +2080,35 @@
                         <p className="text-[11px] text-amber-600 font-mono mt-0.5">📅 Schedule: {formatScheduleTo12Hour(item.semester)}</p>
                       </div>
                       <StatusBadge status={item.status} scheduleStr={item.semester} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : activeNavTab === 'active_leagues_list' ? (
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">🏆 Active Leagues Created By You ({leaguesList.length})</h3>
+                <button onClick={() => setActiveNavTab('approvals')} className="text-slate-400 font-bold text-xs">✕ Back</button>
+              </div>
+              {leaguesList.length === 0 ? (
+                <p className="text-xs text-slate-500 py-8 text-center">No leagues created by you yet.</p>
+              ) : (
+                <div className="space-y-3">
+                  {leaguesList.map(item => (
+                    <div key={item.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-12 h-12 rounded-2xl bg-orange-100 flex items-center justify-center text-xl shrink-0">🏀</div>
+                        <div className="space-y-0.5">
+                          <p className="font-extrabold text-slate-900 text-sm">{item.course_program.replace('🏆 LEAGUE: ', '')}</p>
+                          <p className="text-[11px] text-slate-500">Basketball • Recreational • Ormoc City</p>
+                          <p className="text-[10px] text-emerald-600 font-mono">📅 {formatScheduleTo12Hour(item.semester)} • Organized by {currentUser.full_name}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                        <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-full text-[9px] font-bold">Approved</span>
+                        <button onClick={() => handleOpenEditLeagueModal(item)} className="px-3.5 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold shadow-sm">Edit</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1953,13 +2126,13 @@
                   <p className="text-2xl font-extrabold text-slate-900">{availableCourts.length}</p>
                   <p className="text-[10px] text-emerald-600">Across your community</p>
                 </div>
-                <div onClick={() => setActiveNavTab('create_league')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 relative transition-all">
+                <div onClick={() => setActiveNavTab('active_leagues_list')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 relative transition-all">
                   <div className="flex justify-between items-start">
                     <p className="text-[11px] font-bold text-slate-400">Active leagues</p>
                     <span className="p-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs">🏆</span>
                   </div>
-                  <p className="text-2xl font-extrabold text-slate-900">{myProposals.length}</p>
-                  <p className="text-[10px] text-emerald-600">Published and in review</p>
+                  <p className="text-2xl font-extrabold text-slate-900">{leaguesList.length}</p>
+                  <p className="text-[10px] text-emerald-600">Created by you</p>
                 </div>
                 <div onClick={() => setActiveNavTab('reservations_view')} className="bg-white p-5 rounded-2xl border border-slate-200 hover:border-emerald-500 cursor-pointer shadow-sm space-y-1 relative transition-all">
                   <div className="flex justify-between items-start">
@@ -1986,7 +2159,7 @@
                   <button onClick={fetchLeagueRegistrations} className="text-xs text-emerald-600 hover:underline">Refresh</button>
                 </h3>
                 {leagueRegistrations.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-4 text-center">Wala pang nag-aapply sa iyong mga liga.</p>
+                  <p className="text-xs text-slate-500 py-4 text-center">No player registrations for your leagues yet.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
@@ -2004,9 +2177,9 @@
                             <td className="py-3.5 font-bold text-slate-900">{reg.course_program}</td>
                             <td className="py-3.5 text-emerald-600 font-mono text-[11px]">{formatScheduleTo12Hour(reg.semester)}</td>
                             <td className="py-3.5"><StatusBadge status={reg.status} scheduleStr={reg.semester} /></td>
-                            <td className="py-3.5 text-right">
+                            <td className="py-3.5 text-right space-x-1.5">
                               {(reg.status === 'submitted' || reg.status === 'Pending') ? (
-                                <button onClick={() => handleApproveLeagueReg(reg.id)} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow text-xs">Approve</button>
+                                <button onClick={() => handleApproveLeagueReg(reg.id)} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow text-xs">Approve</button>
                               ) : (
                                 <span className="text-slate-400 font-semibold text-[11px]">Approved</span>
                               )}
@@ -2127,7 +2300,7 @@
                 <form onSubmit={handleOrganizerFinalReservationSubmit} className="space-y-3 text-xs">
                   <div><label className="text-slate-600 font-bold block mb-1">Organizer Name</label><input type="text" value={orgResName} onChange={e => setOrgResName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900" /></div>
                   <div><label className="text-slate-600 font-bold block mb-1">Contact Number</label><input type="text" value={orgResContact} onChange={e => setOrgResContact(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono" /></div>
-                  <div><label className="text-slate-600 font-bold block mb-1">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setOrgResPayment('gcash')} className={`py-1.5 rounded-lg ${orgResPayment === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setResPayment('cash')} className={`py-1.5 rounded-lg ${resPayment === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
+                  <div><label className="text-slate-600 font-bold block mb-1">Payment Method</label><div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl font-bold"><button type="button" onClick={() => setOrgResPayment('gcash')} className={`py-1.5 rounded-lg ${orgResPayment === 'gcash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>GCash</button><button type="button" onClick={() => setOrgResPayment('cash')} className={`py-1.5 rounded-lg ${orgResPayment === 'cash' ? 'bg-emerald-600 text-white' : 'text-slate-600'}`}>Cash</button></div></div>
                   {orgResPayment === 'gcash' && <div><input type="text" value={orgResGcashRef} onChange={e => setOrgResGcashRef(e.target.value)} placeholder="GCash Ref No." className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono" /></div>}
                   <button type="submit" disabled={submittingOrganizerBooking} className="w-full py-2.5 bg-emerald-600 text-white font-bold rounded-xl shadow">Submit Request</button>
                 </form>
@@ -2324,8 +2497,8 @@
                           { id: 'profile', label: 'Profile', icon: '👤' }
                         ] : [
                           { id: 'home', label: 'Overview', icon: '🏠' },
-                          { id: 'reservation', label: 'Find Courts', icon: '🏟️' },
-                          { id: 'leagues', label: 'Leagues', icon: '🏆' },
+                          { id: 'reservation', label: 'Reserve Court', icon: '🏟️' },
+                          { id: 'leagues', label: 'Register to League', icon: '🏆' },
                           { id: 'profile', label: 'Profile', icon: '👤' }
                         ]).map((item) => (
                           <button key={item.id} type="button" onClick={() => setActiveNavTab(item.id)} className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-xs font-bold transition-all ${activeNavTab === item.id ? 'bg-emerald-50 text-emerald-700 shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>
@@ -2362,14 +2535,14 @@
                   ) : isOrganizer ? (
                     <>
                       <button onClick={() => setActiveNavTab('approvals')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'approvals' ? 'text-emerald-600' : 'text-slate-400'}`}><span>📊</span><span>Overview</span></button>
-                      <button onClick={() => setActiveNavTab('request_court')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'request_court' ? 'text-emerald-600' : 'text-slate-400'}`}><span className="text-sm">🏟️</span><span>Request</span></button>
+                      <button onClick={() => setActiveNavTab('request_court')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'request_court' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏟️</span><span>Request</span></button>
                       <button onClick={() => setActiveNavTab('create_league')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'create_league' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏆</span><span>Leagues</span></button>
                       <button onClick={() => setActiveNavTab('profile')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'profile' ? 'text-emerald-600' : 'text-slate-400'}`}><span>👤</span><span>Profile</span></button>
                     </>
                   ) : (
                     <>
-                      <button onClick={() => setActiveNavTab('home')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'home' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏠</span><span>Home</span></button>
-                      <button onClick={() => setActiveNavTab('reservation')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'reservation' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏟️</span><span>Courts</span></button>
+                      <button onClick={() => setActiveNavTab('home')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'home' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏠</span><span>Overview</span></button>
+                      <button onClick={() => setActiveNavTab('reservation')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'reservation' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏟️</span><span>Reserve</span></button>
                       <button onClick={() => setActiveNavTab('leagues')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'leagues' ? 'text-emerald-600' : 'text-slate-400'}`}><span>🏆</span><span>Leagues</span></button>
                       <button onClick={() => setActiveNavTab('profile')} className={`flex flex-col items-center gap-0.5 ${activeNavTab === 'profile' ? 'text-emerald-600' : 'text-slate-400'}`}><span>👤</span><span>Profile</span></button>
                     </>
